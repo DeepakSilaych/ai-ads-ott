@@ -105,7 +105,8 @@ function VideoDetail({ video }) {
 }
 
 function AudioBranding({ video, analysis }) {
-  const [mode, setMode] = useState('dialogue')
+  const [mode, setMode] = useState('visual')
+  const [visualIdx, setVisualIdx] = useState(null)
   const [brands, setBrands] = useState([])
   const [brand, setBrand] = useState(null)
   const [gap, setGap] = useState(null)
@@ -132,7 +133,18 @@ function AudioBranding({ video, analysis }) {
   const generate = async () => {
     setBusy(true); setError(null)
     let res
-    if (mode === 'dialogue') {
+    if (mode === 'visual') {
+      res = await fetch('/api/place_visual', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filename: video.filename,
+          slot_index: +visualIdx,
+          brand,
+          chain,
+        }),
+      }).then((r) => r.json())
+    } else if (mode === 'dialogue') {
       res = await fetch('/api/place_dialogue', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -171,11 +183,35 @@ function AudioBranding({ video, analysis }) {
         <SegmentedControl
           size="xs" value={mode} onChange={setMode}
           data={[
+            { value: 'visual', label: 'Visual placement' },
             { value: 'dialogue', label: 'Dialogue swap (seamless)' },
             { value: 'gap', label: 'Gap spot' },
           ]}
         />
       </Group>
+
+      {mode === 'visual' && (
+        (analysis.visual_slots || []).length === 0
+          ? <Text size="xs" c="dimmed">No visual placements detected for this video.</Text>
+          : <Group align="flex-end" gap="sm" wrap="wrap">
+              <Select
+                label="Detected surface" size="xs" w={330}
+                data={analysis.visual_slots.map((s, i) => ({
+                  value: String(i),
+                  label: `t=${s.timestamp}s — ${s.surface} (${s.score}/10)`,
+                }))}
+                value={visualIdx} onChange={setVisualIdx}
+              />
+              <Select
+                label="Brand" size="xs" w={160} searchable
+                data={brands.map((b) => ({ value: b.name, label: b.name }))}
+                value={brand} onChange={setBrand}
+              />
+              <Button size="xs" onClick={generate} loading={busy} disabled={visualIdx === null || !brand}>
+                {chain ? '+ Add visual ad' : 'Place visual ad'}
+              </Button>
+            </Group>
+      )}
 
       {mode === 'dialogue' && (
         swaps.length === 0
@@ -238,13 +274,15 @@ function AudioBranding({ video, analysis }) {
             {results.map((r, i) => (
               <Group key={r.key} gap={8}>
                 <Badge size="xs" variant="outline" color="gray">#{i + 1}</Badge>
-                <Badge size="xs" variant="light" color={r.script ? 'indigo' : 'pink'}>
-                  {r.script ? 'gap spot' : 'dialogue swap'}
+                <Badge size="xs" variant="light" color={r.surface ? 'teal' : r.script ? 'indigo' : 'pink'}>
+                  {r.surface ? 'visual ad' : r.script ? 'gap spot' : 'dialogue swap'}
                 </Badge>
                 <Text size="xs" c="dimmed" lineClamp={1} style={{ flex: 1 }}>
-                  {r.script
-                    ? `"${r.script}" @ ${r.start_ts}s`
-                    : `"${r.line_after}" @ ${r.at_ts}s (${r.engine})`}
+                  {r.surface
+                    ? `${r.brand} on ${r.surface} @ ${r.start_ts}–${r.end_ts}s`
+                    : r.script
+                      ? `"${r.script}" @ ${r.start_ts}s`
+                      : `"${r.line_after}" @ ${r.at_ts}s (${r.engine})`}
                 </Text>
               </Group>
             ))}

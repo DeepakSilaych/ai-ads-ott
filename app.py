@@ -144,6 +144,28 @@ def place_dialogue():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/place_visual', methods=['POST'])
+def place_visual():
+    import visual_placer
+    data = request.json
+    try:
+        video_id = _video_id(data['filename'])
+        with open(_result_path(video_id)) as f:
+            analysis = json.load(f)
+        slot = analysis['visual_slots'][int(data['slot_index'])]
+        result = visual_placer.run(
+            filename=data['filename'],
+            slot=slot,
+            visual_slots=analysis['visual_slots'],
+            brand_name=data['brand'],
+            chain=bool(data.get('chain')),
+        )
+        result['output'] = '/' + os.path.relpath(result['output'], os.path.dirname(__file__))
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/detect/<video_id>')
 def detection_status(video_id):
     job = _jobs.get(video_id)
