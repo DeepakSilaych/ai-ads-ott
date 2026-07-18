@@ -83,14 +83,16 @@ def fit_word_audio(word_audio, max_dur):
     return trimmed
 
 
-def overlay_word(video_path, out_path, word_audio, at_ts, duck_db=-10):
-    """Mix the word into the original audio at at_ts. No time shift."""
+def overlay_word(video_path, out_path, word_audio, at_ts, duck_db=-10, duck_dur=None):
+    """Mix the word into the original audio at at_ts. No time shift.
+    duck_dur extends the duck window beyond the new audio's length (e.g. to
+    cover the WHOLE replaced span so no original-word tail leaks through)."""
     probe = subprocess.run(
         ["ffprobe", "-v", "error", "-show_entries", "format=duration",
          "-of", "csv=p=0", word_audio],
         capture_output=True, text=True, check=True)
     dur = float(probe.stdout.strip())
-    end = at_ts + dur
+    end = at_ts + max(dur, duck_dur or 0)
     duck = f"volume=enable='between(t,{at_ts},{end})':volume={10 ** (duck_db / 20):.3f}"
     fc = (f"[0:a]{duck}[bed];"
           f"[1:a]adelay={int(at_ts * 1000)}|{int(at_ts * 1000)},volume=1.8[w];"
@@ -218,7 +220,8 @@ def run_seed(filename, swap, transcript, chain=False):
 
     # fit into the line span, allowed to run into the trailing pause
     fitted = fit_word_audio(line_wav, span + slack)
-    dur = overlay_word(video_path, out_path, fitted, seg["start_ts"], duck_db=-30)
+    dur = overlay_word(video_path, out_path, fitted, seg["start_ts"], duck_db=-30,
+                       duck_dur=span + 0.1)
     return {
         "spoken": line,
         "at_ts": seg["start_ts"],
