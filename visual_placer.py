@@ -233,6 +233,52 @@ def run_track(filename, track, brand_name, chain=False, duration=None, windows=N
             capture_output=True, check=True)
         pieces.append(p)
 
+    model_name = model or V2V_MODEL
+    if model_name != "aleph2":
+        # cheap models cap input at 10s and lack multishot consistency —
+        # split long windows and edit each piece with its own call
+        split = []
+        for s, e in windows:
+            while e - s > 9.5:
+                split.append([s, s + 9.5])
+                s += 9.5
+            split.append([s, e])
+        windows = [w for w in split if w[1] - w[0] > 0.4]
+        pieces = []
+        for i, (s, e) in enumerate(windows):
+            p = os.path.join(WORK_DIR, f"w{i}.mp4")
+            subprocess.run(
+                ["ffmpeg", "-y", "-ss", f"{s:.3f}", "-to", f"{e:.3f}", "-i", video_path,
+                 "-c:v", "libx264", "-crf", "18", "-r", "24", "-an", p],
+                capture_output=True, check=True)
+            pieces.append(p)
+        prompt = build_prompt(track, brand_name)
+        src_v = video_path
+        skipped = []
+        for i, ((s, e), p) in enumerate(zip(windows, pieces)):
+            edited = None
+            for attempt in range(2):
+                try:
+                    edited = edit_segment(p, prompt, model=model_name)
+                    break
+                except Exception:
+                    continue
+            step_out = out_path if i == len(windows) - 1 else os.path.join(WORK_DIR, f"step{i}.mp4")
+            if edited is None:
+                skipped.append([round(s, 2), round(e, 2)])
+                if src_v != step_out:
+                    import shutil
+                    shutil.copyfile(src_v, step_out)
+            else:
+                splice_video(src_v, step_out, edited, s, e)
+            src_v = step_out
+        return {
+            "type": "visual", "brand": brand_name, "surface": track.get("surface"),
+            "windows": [[round(s, 2), round(e, 2)] for s, e in windows],
+            "skipped_windows": skipped,
+            "prompt": prompt, "engine": f"runway-{model_name}", "output": out_path,
+        }
+
     if len(pieces) == 1:
         combined = pieces[0]
     else:

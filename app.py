@@ -338,7 +338,7 @@ def place_visual():
                 filename=data['filename'], track=track,
                 brand_name=data['brand'], chain=chain,
                 duration=analysis.get('duration'),
-                windows=[list(w) for w in track['indexed']['windows']] or None,
+                windows=[list(w) for w in (data.get('windows') or track['indexed']['windows'])] or None,
                 model=model)
         else:
             slot = analysis['visual_slots'][int(data['slot_index'])]
