@@ -197,10 +197,36 @@ function AudioBranding({ video, analysis, resume }) {
 
   const latest = results[results.length - 1]
 
+  const startSession = async () => {
+    const s = await fetch('/api/sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename: video.filename }),
+    }).then((r) => r.json())
+    if (s.id) setSessionId(s.id)
+  }
+
+  if (!sessionId) {
+    return (
+      <Paper p="md" radius="md" withBorder>
+        <Group justify="space-between">
+          <div>
+            <Text size="xs" c="dimmed" tt="uppercase" fw={700}>Ad Integration</Text>
+            <Text size="xs" c="dimmed" mt={4}>All edits happen inside a session — start one to begin, or continue an existing session from the Sessions tab.</Text>
+          </div>
+          <Button size="xs" onClick={startSession}>Start ad session</Button>
+        </Group>
+      </Paper>
+    )
+  }
+
   return (
     <Paper p="md" radius="md" withBorder>
       <Group justify="space-between" mb="sm">
-        <Text size="xs" c="dimmed" tt="uppercase" fw={700}>Audio Branding</Text>
+        <Group gap={8}>
+          <Text size="xs" c="dimmed" tt="uppercase" fw={700}>Ad Integration</Text>
+          <Badge size="xs" variant="outline" color="gray" ff="monospace">session {sessionId}</Badge>
+        </Group>
         <SegmentedControl
           size="xs" value={mode} onChange={setMode}
           data={[

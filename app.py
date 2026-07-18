@@ -116,45 +116,69 @@ def _restore_session(session_id, filename):
     shutil.copyfile(src, dst)
 
 
+class SessionRequired(Exception):
+    pass
+
+
 def _session_setup(data):
-    """Common per-request session handling: returns (chain, session_id).
-    Passing session_id reopens that session (restores its video, forces chain)."""
+    """Every edit MUST run inside an explicitly created session.
+    Returns (chain, session). chain=True once the session has edits — the
+    session's archived video is restored as the working file."""
     session_id = data.get('session_id')
-    chain = bool(data.get('chain')) or bool(session_id)
-    if session_id:
+    if not session_id:
+        raise SessionRequired('session_id is required — create one via POST /api/sessions')
+    session = next((s for s in _load_sessions() if s['id'] == session_id), None)
+    if session is None:
+        raise SessionRequired(f'session {session_id} not found')
+    if session['filename'] != data['filename']:
+        raise SessionRequired('session belongs to a different video')
+    chain = len(session['edits']) > 0
+    if chain:
         _restore_session(session_id, data['filename'])
     return chain, session_id
 
 
-def _record_edit(kind, filename, result, chain, session_id=None):
-    """Sessions = one stack of chained edits on a video, archived as a unit.
-    session_id appends to that session; chain appends to the newest matching
-    session; unchained starts a new one."""
-    import shutil
+@app.errorhandler(SessionRequired)
+def _session_required(e):
+    return jsonify({'error': str(e)}), 400
+
+
+@app.route('/api/sessions', methods=['POST'])
+def create_session():
+    """Explicitly start an ad-integration session for a video."""
     import time
     import uuid
+    filename = request.json.get('filename')
+    if not filename:
+        return jsonify({'error': 'filename required'}), 400
+    sessions = _load_sessions()
+    session = {
+        'id': uuid.uuid4().hex[:10],
+        'filename': filename,
+        'created_at': time.strftime('%Y-%m-%d %H:%M:%S'),
+        'edits': [],
+    }
+    session['video'] = f"/static/uploads/sessions/{session['id']}.mp4"
+    sessions.insert(0, session)
+    _save_sessions(sessions)
+    return jsonify(session)
+
+
+def _record_edit(kind, filename, result, chain, session_id=None):
+    """Append an edit to its (mandatory, pre-existing) session and refresh
+    the session's archived video."""
+    import shutil
+    import time
     os.makedirs(SESSIONS_DIR, exist_ok=True)
     sessions = _load_sessions()
-    now = time.strftime('%Y-%m-%d %H:%M:%S')
-    edit = {'kind': kind, 'at': now,
-            'detail': {k: v for k, v in result.items() if k != 'output'}}
-
-    session = None
-    if session_id:
-        session = next((s for s in sessions if s['id'] == session_id), None)
-    elif chain and sessions and sessions[0]['filename'] == filename:
-        session = sessions[0]
+    session = next((s for s in sessions if s['id'] == session_id), None)
     if session is None:
-        session = {
-            'id': uuid.uuid4().hex[:10],
-            'filename': filename,
-            'created_at': now,
-            'edits': [],
-        }
-        session['video'] = f"/static/uploads/sessions/{session['id']}.mp4"
-        sessions.insert(0, session)
+        raise SessionRequired(f'session {session_id} not found')
+    now = time.strftime('%Y-%m-%d %H:%M:%S')
+    session['edits'].append({
+        'kind': kind, 'at': now,
+        'detail': {k: v for k, v in result.items() if k != 'output'}})
 
-    session['edits'].append(edit)
     session['updated_at'] = now
     src = os.path.join(os.path.dirname(__file__), result['output'].lstrip('/'))
     shutil.copyfile(src, os.path.join(SESSIONS_DIR, f"{session['id']}.mp4"))
