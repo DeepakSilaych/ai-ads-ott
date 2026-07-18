@@ -356,10 +356,10 @@ function AudioBranding({ video, analysis, resume }) {
       {mode === 'dialogue' && (
         <>
           <Group align="flex-end" gap="sm" wrap="wrap" mb={liveSwaps.length ? 'xs' : 0}>
-            <Select
-              label="Target brand (optional)" size="xs" w={180} clearable searchable
+            <MultiSelect
+              label="Target brand(s) (optional)" size="xs" w={220} clearable searchable
               data={brandOptions}
-              value={swapBrand} onChange={setSwapBrand}
+              value={swapBrand || []} onChange={setSwapBrand}
             />
             <Button size="xs" variant="light" loading={rescanning} onClick={async () => {
               setRescanning(true)
