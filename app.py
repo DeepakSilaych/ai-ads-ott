@@ -22,6 +22,7 @@ def upload_video():
         return jsonify({'error': 'No selected file'}), 400
 
     original_path = os.path.join(app.config['UPLOAD_FOLDER'], 'original', video.filename)
+    os.makedirs(os.path.dirname(original_path), exist_ok=True)
     video.save(original_path)
     return jsonify({'filename': video.filename, 'path': f'/static/uploads/original/{video.filename}'})
 
