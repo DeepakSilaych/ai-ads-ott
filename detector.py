@@ -175,7 +175,10 @@ def detect_dialogue_swaps(transcript, api_key, scene_context="", samples=5, bran
                 k = (s["brand"], round(s.get("start_ts", 0)))
                 if k not in merged or s.get("score", 0) > merged[k].get("score", 0):
                     merged[k] = s
-        return sorted(merged.values(), key=lambda s: -s.get("score", 0))
+        # best splice candidates first: exact spoken-length match, then score
+        return sorted(merged.values(),
+                      key=lambda s: (abs(s.get("new_syllables", 0) - s.get("orig_syllables", 0)),
+                                     -s.get("score", 0)))
     lines = []
     for seg in transcript:
         words = " ".join(f"{w['w']}[{w['s']}-{w['e']}]" for w in seg.get("words", []))
@@ -217,14 +220,20 @@ def _syllables(text):
     return total
 
 
-def _length_fit(swap, tolerance=2):
+def _length_fit(swap, tolerance=1):
     """Verify the replacement's spoken length matches the replaced words —
     the audio edit is only seamless when durations line up. Model-reported
-    syllable counts are not trusted; we recount."""
-    orig = _syllables(swap.get("original_text") or "")
-    new = _syllables(swap.get("replacement_text") or "")
+    syllable counts are not trusted; we recount. Strict: +/-1 syllable, and
+    insertions (replacement starting with the original words) are rejected —
+    they always need time-compression, which is audible."""
+    orig_text = (swap.get("original_text") or "").strip()
+    repl_text = (swap.get("replacement_text") or "").strip()
+    orig = _syllables(orig_text)
+    new = _syllables(repl_text)
     swap["orig_syllables"] = orig
     swap["new_syllables"] = new
+    if orig_text and repl_text.lower().startswith(orig_text.lower()):
+        return False  # insertion, not a swap
     return abs(new - orig) <= tolerance
 
 
