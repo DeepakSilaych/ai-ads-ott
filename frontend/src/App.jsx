@@ -445,7 +445,7 @@ function AudioBranding({ video, analysis, resume }) {
                 </Badge>
                 <Text size="xs" c="dimmed" lineClamp={1} style={{ flex: 1 }}>
                   {r.surface
-                    ? `${r.brand} on ${r.surface} @ ${r.seg_start ?? r.start_ts}–${r.seg_end ?? r.end_ts}s`
+                    ? `${r.brand} on ${r.surface}${r.windows ? ` (${r.windows.map(w => w.join('–')).join(', ')}s)` : r.seg_start !== undefined ? ` @ ${r.seg_start}–${r.seg_end}s` : ''}`
                     : r.script
                       ? `"${r.script}" @ ${r.start_ts}s`
                       : `"${r.line_after}" @ ${r.at_ts}s (${r.engine})`}
@@ -453,7 +453,32 @@ function AudioBranding({ video, analysis, resume }) {
               </Group>
             ))}
           </Stack>
-          <Player key={latest.key} src={`${latest.output || (resume && resume.video)}?v=${latest.key}`} />
+          {(() => {
+            // one player per distinct output video: variants (own sessions)
+            // render side by side; chained edits collapse to the newest
+            const seen = new Map()
+            for (const r of results) {
+              const k = r.session_id || 'main'
+              seen.set(k, r)  // later results win within a session
+            }
+            const players = [...seen.values()]
+            return (
+              <Group align="flex-start" gap="md" wrap="wrap">
+                {players.map((r) => (
+                  <Box key={r.key} w={players.length > 1 ? '45%' : '60%'}>
+                    {players.length > 1 && (
+                      <Badge size="xs" variant="light" mb={4}>{r.brand || r.engine}</Badge>
+                    )}
+                    <video
+                      src={`${r.output || (resume && resume.video)}?v=${r.key}`}
+                      controls preload="metadata"
+                      style={{ width: '100%', borderRadius: 8, background: '#000' }}
+                    />
+                  </Box>
+                ))}
+              </Group>
+            )
+          })()}
         </Box>
       )}
     </Paper>
