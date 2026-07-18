@@ -19,10 +19,13 @@ def load_catalog():
     return catalog
 
 
-def catalog_for_prompt():
-    """Compact text block describing every brand, for LLM context."""
+def catalog_for_prompt(only=None):
+    """Compact text block describing brands for LLM context.
+    only=<brand name> restricts to that brand (user-directed targeting)."""
     lines = []
     for b in load_catalog():
+        if only and b["name"].lower() != only.lower():
+            continue
         lines.append(
             f"- {b['name']} (say: \"{b['spoken_name']}\") | {b['category']} | "
             f"products: {', '.join(b['products'])} | "

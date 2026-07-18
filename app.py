@@ -180,6 +180,34 @@ def delete_session(session_id):
     return jsonify({'ok': True})
 
 
+@app.route('/api/rescan_swaps', methods=['POST'])
+def rescan_swaps():
+    """Re-run dialogue swap detection targeted at a user-chosen brand."""
+    data = request.json
+    try:
+        video_id = _video_id(data['filename'])
+        with open(_result_path(video_id)) as f:
+            analysis = json.load(f)
+        scene_ctx = '; '.join(i.get('description', '') for i in analysis.get('integrations', []))
+        swaps = detector.detect_dialogue_swaps(
+            analysis['transcript'], detector._api_key(),
+            scene_context=scene_ctx, brand=data.get('brand'))
+        frames_dir = os.path.join(detector.FRAMES_DIR, video_id)
+        frames = [((int(n[1:5]) - 1) * detector.FRAME_INTERVAL_S, os.path.join(frames_dir, n))
+                  for n in sorted(os.listdir(frames_dir))] if os.path.exists(frames_dir) else []
+        for swap in swaps:
+            try:
+                swap['lip_sync'] = detector.check_lip_sync(swap, frames, detector._api_key())
+            except Exception:
+                swap['lip_sync'] = {'risk': 'unknown'}
+        analysis['dialogue_swaps'] = swaps
+        with open(_result_path(video_id), 'w') as f:
+            json.dump(analysis, f)
+        return jsonify({'dialogue_swaps': swaps})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/brands')
 def list_brands():
     from brands_catalog import load_catalog

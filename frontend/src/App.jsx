@@ -135,7 +135,10 @@ function AudioBranding({ video, analysis, resume }) {
 
   useEffect(() => { api('/api/brands').then(setBrands) }, [])
 
-  const swaps = analysis.dialogue_swaps || []
+  const [swapBrand, setSwapBrand] = useState(null)
+  const [rescanning, setRescanning] = useState(false)
+  const [liveSwaps, setLiveSwaps] = useState(analysis.dialogue_swaps || [])
+  const swaps = liveSwaps
 
   const gaps = analysis.audio_slots.map((s, i) => ({
     value: String(i),
@@ -232,21 +235,42 @@ function AudioBranding({ video, analysis, resume }) {
       )}
 
       {mode === 'dialogue' && (
-        swaps.length === 0
-          ? <Text size="xs" c="dimmed">No dialogue swap opportunities detected for this video.</Text>
-          : <Group align="flex-end" gap="sm" wrap="wrap">
-              <Select
-                label="Detected swap" size="xs" w={420}
-                data={swaps.map((s, i) => ({
-                  value: String(i),
-                  label: `[${s.brand}] "${s.full_line_after}" @ ${s.start_ts}s — lip-sync: ${s.lip_sync?.risk ?? '?'}`,
-                }))}
-                value={swapIdx} onChange={setSwapIdx}
-              />
-              <Button size="xs" onClick={generate} loading={busy} disabled={swapIdx === null}>
-                {chain ? '+ Add re-voiced line' : 'Re-voice line'}
-              </Button>
-            </Group>
+        <>
+          <Group align="flex-end" gap="sm" wrap="wrap" mb={liveSwaps.length ? 'xs' : 0}>
+            <Select
+              label="Target brand (optional)" size="xs" w={180} clearable searchable
+              data={brands.map((b) => ({ value: b.name, label: b.name }))}
+              value={swapBrand} onChange={setSwapBrand}
+            />
+            <Button size="xs" variant="light" loading={rescanning} onClick={async () => {
+              setRescanning(true)
+              const res = await fetch('/api/rescan_swaps', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename: video.filename, brand: swapBrand }),
+              }).then((r) => r.json())
+              setRescanning(false)
+              if (!res.error) { setLiveSwaps(res.dialogue_swaps); setSwapIdx(null) }
+            }}>
+              Scan for swaps
+            </Button>
+          </Group>
+          {liveSwaps.length === 0
+            ? <Text size="xs" c="dimmed">No swap proposals — pick a target brand and scan, or leave blank for all brands.</Text>
+            : <Group align="flex-end" gap="sm" wrap="wrap">
+                <Select
+                  label="Proposed swap" size="xs" w={420}
+                  data={liveSwaps.map((s, i) => ({
+                    value: String(i),
+                    label: `[${s.brand}] "${s.full_line_after}" @ ${s.start_ts}s — lip-sync: ${s.lip_sync?.risk ?? '?'}`,
+                  }))}
+                  value={swapIdx} onChange={setSwapIdx}
+                />
+                <Button size="xs" onClick={generate} loading={busy} disabled={swapIdx === null}>
+                  {chain ? '+ Add re-voiced line' : 'Re-voice line'}
+                </Button>
+              </Group>}
+        </>
       )}
 
       {mode === 'gap' && (

@@ -157,7 +157,7 @@ def transcribe(video_path):
     return out
 
 
-def detect_dialogue_swaps(transcript, api_key, scene_context="", samples=5):
+def detect_dialogue_swaps(transcript, api_key, scene_context="", samples=5, brand=None):
     """Find minimal brand-mention dialogue edits using the brands catalog.
 
     Samples the LLM several times and merges deduped results — single runs
@@ -168,7 +168,7 @@ def detect_dialogue_swaps(transcript, api_key, scene_context="", samples=5):
         merged = {}
         with ThreadPoolExecutor(max_workers=samples) as pool:
             runs = pool.map(
-                lambda _: detect_dialogue_swaps(transcript, api_key, scene_context, samples=1),
+                lambda _: detect_dialogue_swaps(transcript, api_key, scene_context, samples=1, brand=brand),
                 range(samples))
         for run in runs:
             for s in run:
@@ -181,7 +181,7 @@ def detect_dialogue_swaps(transcript, api_key, scene_context="", samples=5):
         words = " ".join(f"{w['w']}[{w['s']}-{w['e']}]" for w in seg.get("words", []))
         lines.append(words or f"{seg['text']} [{seg['start_ts']}-{seg['end_ts']}]")
     prompt = (DIALOGUE_SWAP_PROMPT
-              .replace("{catalog}", catalog_for_prompt())
+              .replace("{catalog}", catalog_for_prompt(only=brand))
               .replace("{scene_context}", scene_context or "unknown"))
     prompt += "\n\n## Transcript (word[start-end] format)\n" + "\n".join(lines)
 
