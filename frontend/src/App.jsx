@@ -11,6 +11,7 @@ import { api, useAdDetection, useVideos } from './hooks/useAdDetection.js'
 export default function App() {
   const { videos, reload: load } = useVideos()
   const [selected, setSelected] = useState(null)
+  const [view, setView] = useState('videos')
 
   return (
     <AppShell navbar={{ width: 240, breakpoint: 0 }} padding="md">
@@ -24,6 +25,10 @@ export default function App() {
             <IconRefresh size={14} />
           </Button>
         </Group>
+        <SegmentedControl
+          fullWidth size="xs" mb="sm" value={view} onChange={setView}
+          data={[{ value: 'videos', label: 'Videos' }, { value: 'runs', label: 'Runs' }]}
+        />
         <ScrollArea>
           <Stack gap="xs">
             {videos.map((v) => (
@@ -50,9 +55,11 @@ export default function App() {
       </AppShell.Navbar>
 
       <AppShell.Main>
-        {selected
-          ? <VideoDetail video={selected} key={selected.video_id} />
-          : <Text c="dimmed" ta="center" mt="30vh">Select a video</Text>}
+        {view === 'runs'
+          ? <RunsDashboard />
+          : selected
+            ? <VideoDetail video={selected} key={selected.video_id} />
+            : <Text c="dimmed" ta="center" mt="30vh">Select a video</Text>}
       </AppShell.Main>
     </AppShell>
   )
@@ -291,6 +298,57 @@ function AudioBranding({ video, analysis }) {
         </Box>
       )}
     </Paper>
+  )
+}
+
+const KIND_META = {
+  visual: { color: 'orange', label: 'visual' },
+  dialogue_swap: { color: 'pink', label: 'dialogue swap' },
+  gap_spot: { color: 'indigo', label: 'gap spot' },
+}
+
+function RunsDashboard() {
+  const [runs, setRuns] = useState(null)
+
+  const load = () => api('/api/runs').then(setRuns)
+  useEffect(() => { load() }, [])
+
+  const remove = async (id) => {
+    await fetch(`/api/runs/${id}`, { method: 'DELETE' })
+    load()
+  }
+
+  if (!runs) return <Loader size="sm" mt="xl" mx="auto" />
+  if (runs.length === 0) return <Text c="dimmed" ta="center" mt="30vh">No runs yet — every placement you generate is archived here.</Text>
+
+  return (
+    <Stack gap="md">
+      <Title order={5}>Run history ({runs.length})</Title>
+      {runs.map((r) => {
+        const meta = KIND_META[r.kind] || { color: 'gray', label: r.kind }
+        const d = r.detail || {}
+        return (
+          <Paper key={r.id} p="md" radius="md" withBorder>
+            <Group justify="space-between" mb={6}>
+              <Group gap={8}>
+                <Badge size="sm" color={meta.color} variant="light">{meta.label}</Badge>
+                {d.brand && <Badge size="sm" variant="outline">{d.brand}</Badge>}
+                {d.engine && <Badge size="sm" color="gray" variant="light">{d.engine}</Badge>}
+                <Text size="xs" c="dimmed">{r.created_at}</Text>
+              </Group>
+              <Button size="compact-xs" variant="subtle" color="red" onClick={() => remove(r.id)}>
+                Delete
+              </Button>
+            </Group>
+            <Text size="xs" c="dimmed" mb={8} lineClamp={2}>
+              {d.script || d.line_after || d.prompt || r.filename}
+            </Text>
+            <video src={r.video} controls preload="metadata"
+                   style={{ width: '55%', borderRadius: 8, background: '#000' }} />
+          </Paper>
+        )
+      })}
+    </Stack>
   )
 }
 

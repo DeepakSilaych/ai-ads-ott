@@ -87,6 +87,60 @@ def start_detection():
     return jsonify({'video_id': video_id, 'status': 'running'})
 
 
+RUNS_DIR = os.path.join(os.path.dirname(__file__), 'static', 'uploads', 'runs')
+RUNS_INDEX = os.path.join(RUNS_DIR, 'runs.json')
+
+
+def _load_runs():
+    if os.path.exists(RUNS_INDEX):
+        with open(RUNS_INDEX) as f:
+            return json.load(f)
+    return []
+
+
+def _record_run(kind, filename, result):
+    """Archive the run's output video + metadata; kept until manually deleted."""
+    import shutil
+    import time
+    import uuid
+    os.makedirs(RUNS_DIR, exist_ok=True)
+    run_id = uuid.uuid4().hex[:10]
+    src = os.path.join(os.path.dirname(__file__), result['output'].lstrip('/'))
+    archived = f'{run_id}.mp4'
+    shutil.copyfile(src, os.path.join(RUNS_DIR, archived))
+    runs = _load_runs()
+    runs.insert(0, {
+        'id': run_id,
+        'kind': kind,
+        'filename': filename,
+        'created_at': time.strftime('%Y-%m-%d %H:%M:%S'),
+        'video': f'/static/uploads/runs/{archived}',
+        'detail': {k: v for k, v in result.items() if k != 'output'},
+    })
+    with open(RUNS_INDEX, 'w') as f:
+        json.dump(runs, f, indent=1)
+    return run_id
+
+
+@app.route('/api/runs')
+def list_runs():
+    return jsonify(_load_runs())
+
+
+@app.route('/api/runs/<run_id>', methods=['DELETE'])
+def delete_run(run_id):
+    runs = _load_runs()
+    keep = [r for r in runs if r['id'] != run_id]
+    if len(keep) == len(runs):
+        return jsonify({'error': 'not found'}), 404
+    path = os.path.join(RUNS_DIR, f'{run_id}.mp4')
+    if os.path.exists(path):
+        os.remove(path)
+    with open(RUNS_INDEX, 'w') as f:
+        json.dump(keep, f, indent=1)
+    return jsonify({'ok': True})
+
+
 @app.route('/api/brands')
 def list_brands():
     from brands_catalog import load_catalog
@@ -108,6 +162,7 @@ def place_audio():
         )
         result['tts_audio'] = '/' + os.path.relpath(result['tts_audio'], os.path.dirname(__file__))
         result['output'] = '/' + os.path.relpath(result['output'], os.path.dirname(__file__))
+        result['run_id'] = _record_run('gap_spot', data['filename'], result)
         return jsonify(result)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -139,6 +194,7 @@ def place_dialogue():
                 filename=data['filename'], swap=swap,
                 transcript=analysis['transcript'], chain=bool(data.get('chain')))
         result['output'] = '/' + os.path.relpath(result['output'], os.path.dirname(__file__))
+        result['run_id'] = _record_run('dialogue_swap', data['filename'], result)
         return jsonify(result)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -161,6 +217,7 @@ def place_visual():
             chain=bool(data.get('chain')),
         )
         result['output'] = '/' + os.path.relpath(result['output'], os.path.dirname(__file__))
+        result['run_id'] = _record_run('visual', data['filename'], result)
         return jsonify(result)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
