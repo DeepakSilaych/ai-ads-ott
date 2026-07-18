@@ -12,6 +12,7 @@ export default function App() {
   const { videos, reload: load } = useVideos()
   const [selected, setSelected] = useState(null)
   const [view, setView] = useState('videos')
+  const [resume, setResume] = useState(null)
 
   return (
     <AppShell navbar={{ width: 240, breakpoint: 0 }} padding="md">
@@ -56,16 +57,19 @@ export default function App() {
 
       <AppShell.Main>
         {view === 'sessions'
-          ? <SessionsDashboard />
+          ? <SessionsDashboard onContinue={(s) => {
+              const v = videos.find((x) => x.filename === s.filename)
+              if (v) { setSelected(v); setResume(s); setView('videos') }
+            }} />
           : selected
-            ? <VideoDetail video={selected} key={selected.video_id} />
+            ? <VideoDetail video={selected} resume={resume} key={selected.video_id + (resume?.id || '')} />
             : <Text c="dimmed" ta="center" mt="30vh">Select a video</Text>}
       </AppShell.Main>
     </AppShell>
   )
 }
 
-function VideoDetail({ video }) {
+function VideoDetail({ video, resume }) {
   const { analysis, job, detect } = useAdDetection(video)
   const videoRef = useRef(null)
 
@@ -105,13 +109,13 @@ function VideoDetail({ video }) {
       </Group>
 
       {analysis && <Timeline analysis={analysis} onSeek={seek} />}
-      {analysis && <AudioBranding video={video} analysis={analysis} />}
+      {analysis && <AudioBranding video={video} analysis={analysis} resume={resume} />}
       {!analysis && !job && <Text size="sm" c="dimmed">Run detection to see ad placement opportunities.</Text>}
     </Stack>
   )
 }
 
-function AudioBranding({ video, analysis }) {
+function AudioBranding({ video, analysis, resume }) {
   const [mode, setMode] = useState('visual')
   const [visualIdx, setVisualIdx] = useState(null)
   const [brands, setBrands] = useState([])
@@ -120,11 +124,14 @@ function AudioBranding({ video, analysis }) {
   const [swapIdx, setSwapIdx] = useState(null)
   const [context, setContext] = useState('')
   const [busy, setBusy] = useState(false)
-  const [results, setResults] = useState([])
+  // resuming a session preloads its edit stack and appends to it server-side
+  const [results, setResults] = useState(() =>
+    (resume?.edits || []).map((e, i) => ({ ...e.detail, kind: e.kind, key: `${resume.id}-${i}` })))
+  const [sessionId, setSessionId] = useState(resume?.id || null)
   const [error, setError] = useState(null)
   // edits stack automatically: first edit starts from the original,
   // every subsequent edit chains on top of the previous result
-  const chain = results.length > 0
+  const chain = results.length > 0 || !!sessionId
 
   useEffect(() => { api('/api/brands').then(setBrands) }, [])
 
@@ -149,6 +156,7 @@ function AudioBranding({ video, analysis }) {
           slot_index: +visualIdx,
           brand,
           chain,
+          session_id: sessionId,
         }),
       }).then((r) => r.json())
     } else if (mode === 'dialogue') {
@@ -159,6 +167,7 @@ function AudioBranding({ video, analysis }) {
           filename: video.filename,
           swap_index: +swapIdx,
           chain,
+          session_id: sessionId,
         }),
       }).then((r) => r.json())
     } else {
@@ -173,11 +182,13 @@ function AudioBranding({ video, analysis }) {
           gap_duration: slot.duration,
           scene_context: context || sceneDefault,
           chain,
+          session_id: sessionId,
         }),
       }).then((r) => r.json())
     }
     setBusy(false)
     if (res.error) { setError(res.error); return }
+    if (res.session_id) setSessionId(res.session_id)
     setResults((prev) => [...prev, { ...res, key: Date.now() }])
   }
 
@@ -273,7 +284,7 @@ function AudioBranding({ video, analysis }) {
               </Badge>
               <Text size="xs" c="dimmed">next edit adds on top of this result</Text>
             </Group>
-            <Button size="compact-xs" variant="subtle" color="red" onClick={() => setResults([])}>
+            <Button size="compact-xs" variant="subtle" color="red" onClick={() => { setResults([]); setSessionId(null) }}>
               Reset stack
             </Button>
           </Group>
@@ -286,7 +297,7 @@ function AudioBranding({ video, analysis }) {
                 </Badge>
                 <Text size="xs" c="dimmed" lineClamp={1} style={{ flex: 1 }}>
                   {r.surface
-                    ? `${r.brand} on ${r.surface} @ ${r.start_ts}–${r.end_ts}s`
+                    ? `${r.brand} on ${r.surface} @ ${r.seg_start ?? r.start_ts}–${r.seg_end ?? r.end_ts}s`
                     : r.script
                       ? `"${r.script}" @ ${r.start_ts}s`
                       : `"${r.line_after}" @ ${r.at_ts}s (${r.engine})`}
@@ -294,7 +305,7 @@ function AudioBranding({ video, analysis }) {
               </Group>
             ))}
           </Stack>
-          <Player key={latest.key} src={`${latest.output}?v=${latest.key}`} />
+          <Player key={latest.key} src={`${latest.output || (resume && resume.video)}?v=${latest.key}`} />
         </Box>
       )}
     </Paper>
@@ -307,7 +318,7 @@ const KIND_META = {
   gap_spot: { color: 'indigo', label: 'gap spot' },
 }
 
-function SessionsDashboard() {
+function SessionsDashboard({ onContinue }) {
   const [sessions, setSessions] = useState(null)
 
   const load = () => api('/api/sessions').then(setSessions)
@@ -336,9 +347,14 @@ function SessionsDashboard() {
               <Text size="xs" ff="monospace" c="dimmed" lineClamp={1} maw={280}>{s.filename}</Text>
               <Text size="xs" c="dimmed">{s.updated_at || s.created_at}</Text>
             </Group>
-            <Button size="compact-xs" variant="subtle" color="red" onClick={() => remove(s.id)}>
-              Delete
-            </Button>
+            <Group gap={4}>
+              <Button size="compact-xs" variant="light" onClick={() => onContinue(s)}>
+                Continue
+              </Button>
+              <Button size="compact-xs" variant="subtle" color="red" onClick={() => remove(s.id)}>
+                Delete
+              </Button>
+            </Group>
           </Group>
           <Stack gap={4} mb={8}>
             {s.edits.map((e, i) => {

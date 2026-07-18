@@ -104,9 +104,32 @@ def _save_sessions(sessions):
         json.dump(sessions, f, indent=1)
 
 
-def _record_edit(kind, filename, result, chain):
+def _restore_session(session_id, filename):
+    """Make an archived session continuable: restore its video as the
+    working edited file so the next chained edit stacks on top of it."""
+    import shutil
+    src = os.path.join(SESSIONS_DIR, f'{session_id}.mp4')
+    if not os.path.exists(src):
+        raise ValueError(f'session {session_id} has no archived video')
+    dst = os.path.join(app.config['UPLOAD_FOLDER'], 'edited', filename)
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    shutil.copyfile(src, dst)
+
+
+def _session_setup(data):
+    """Common per-request session handling: returns (chain, session_id).
+    Passing session_id reopens that session (restores its video, forces chain)."""
+    session_id = data.get('session_id')
+    chain = bool(data.get('chain')) or bool(session_id)
+    if session_id:
+        _restore_session(session_id, data['filename'])
+    return chain, session_id
+
+
+def _record_edit(kind, filename, result, chain, session_id=None):
     """Sessions = one stack of chained edits on a video, archived as a unit.
-    chain appends to the video's open session; unchained starts a new one."""
+    session_id appends to that session; chain appends to the newest matching
+    session; unchained starts a new one."""
     import shutil
     import time
     import uuid
@@ -116,7 +139,11 @@ def _record_edit(kind, filename, result, chain):
     edit = {'kind': kind, 'at': now,
             'detail': {k: v for k, v in result.items() if k != 'output'}}
 
-    session = sessions[0] if (chain and sessions and sessions[0]['filename'] == filename) else None
+    session = None
+    if session_id:
+        session = next((s for s in sessions if s['id'] == session_id), None)
+    elif chain and sessions and sessions[0]['filename'] == filename:
+        session = sessions[0]
     if session is None:
         session = {
             'id': uuid.uuid4().hex[:10],
@@ -164,9 +191,10 @@ def place_audio():
     import audio_placer
     data = request.json
     try:
+        chain, session_id = _session_setup(data)
         result = audio_placer.run(
             filename=data['filename'],
-            chain=bool(data.get('chain')),
+            chain=chain,
             brand_name=data['brand'],
             start_ts=float(data['start_ts']),
             gap_duration=float(data.get('gap_duration', 10)),
@@ -174,7 +202,7 @@ def place_audio():
         )
         result['tts_audio'] = '/' + os.path.relpath(result['tts_audio'], os.path.dirname(__file__))
         result['output'] = '/' + os.path.relpath(result['output'], os.path.dirname(__file__))
-        result['session_id'] = _record_edit('gap_spot', data['filename'], result, bool(data.get('chain')))
+        result['session_id'] = _record_edit('gap_spot', data['filename'], result, chain, session_id)
         return jsonify(result)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -189,24 +217,25 @@ def place_dialogue():
         with open(_result_path(video_id)) as f:
             analysis = json.load(f)
         swap = analysis['dialogue_swaps'][int(data['swap_index'])]
+        chain, session_id = _session_setup(data)
         engine = data.get('engine', 'auto')
         if engine in ('auto', 'voicecraft'):
             try:
                 result = dialogue_placer.run_voicecraft(
                     filename=data['filename'], swap=swap,
-                    transcript=analysis['transcript'], chain=bool(data.get('chain')))
+                    transcript=analysis['transcript'], chain=chain)
             except Exception:
                 if engine == 'voicecraft':
                     raise
                 result = dialogue_placer.run(
                     filename=data['filename'], swap=swap,
-                    transcript=analysis['transcript'], chain=bool(data.get('chain')))
+                    transcript=analysis['transcript'], chain=chain)
         else:
             result = dialogue_placer.run(
                 filename=data['filename'], swap=swap,
-                transcript=analysis['transcript'], chain=bool(data.get('chain')))
+                transcript=analysis['transcript'], chain=chain)
         result['output'] = '/' + os.path.relpath(result['output'], os.path.dirname(__file__))
-        result['session_id'] = _record_edit('dialogue_swap', data['filename'], result, bool(data.get('chain')))
+        result['session_id'] = _record_edit('dialogue_swap', data['filename'], result, chain, session_id)
         return jsonify(result)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -221,15 +250,16 @@ def place_visual():
         with open(_result_path(video_id)) as f:
             analysis = json.load(f)
         slot = analysis['visual_slots'][int(data['slot_index'])]
+        chain, session_id = _session_setup(data)
         result = visual_placer.run(
             filename=data['filename'],
             slot=slot,
             visual_slots=analysis['visual_slots'],
             brand_name=data['brand'],
-            chain=bool(data.get('chain')),
+            chain=chain,
         )
         result['output'] = '/' + os.path.relpath(result['output'], os.path.dirname(__file__))
-        result['session_id'] = _record_edit('visual', data['filename'], result, bool(data.get('chain')))
+        result['session_id'] = _record_edit('visual', data['filename'], result, chain, session_id)
         return jsonify(result)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
