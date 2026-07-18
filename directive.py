@@ -28,6 +28,13 @@ VISION_MODEL = "z-ai/glm-4.6v"
 SEARCH_PAD_S = 3.0
 SEARCH_STEP_S = 0.5
 
+# bbox sanity, as a fraction of frame area (coords are normalised 0-1000).
+# A box covering most of the frame means the VLM answered "yes, somewhere"
+# instead of localising — compositing onto that would paint the whole shot.
+MAX_AREA_FRAC = 0.70
+MIN_AREA_FRAC = 0.01
+_FRAME_AREA = 1000.0 * 1000.0
+
 
 def _fmt_slots(slots):
     return "\n".join(
@@ -148,24 +155,32 @@ def locate_surface(video_path, video_id, target, start_ts, end_ts, api_key,
     with ThreadPoolExecutor(max_workers=8) as pool:
         results = list(pool.map(check, frames))
 
-    best, best_area = None, 0
+    want_ts = (start_ts + end_ts) / 2
+    best, best_rank = None, 0
     for ts, d in results:
         bbox = d.get("bbox")
         if not d.get("visible") or not bbox or len(bbox) != 4:
             continue
-        area = max(0, bbox[2] - bbox[0]) * max(0, bbox[3] - bbox[1])
-        # prefer unoccluded surfaces; a partial one only wins on size
+        frac = (max(0, bbox[2] - bbox[0]) * max(0, bbox[3] - bbox[1])) / _FRAME_AREA
+        # a near-full-frame or hairline box is a non-answer, not a surface
+        if not (MIN_AREA_FRAC <= frac <= MAX_AREA_FRAC):
+            continue
+        rank = frac
         if d.get("fully_visible"):
-            area *= 1.5
-        if area > best_area:
-            best, best_area = {
+            rank *= 1.5
+        # The user picked this moment deliberately, so drift is expensive:
+        # a squared penalty keeps a merely-bigger surface further away from
+        # hijacking a decent one at the requested time.
+        rank /= (1.0 + abs(ts - want_ts)) ** 2
+        if rank > best_rank:
+            best, best_rank = {
                 "timestamp": round(ts, 2),
                 "surface": target,
                 "bbox": bbox,
                 "score": 8,
                 "fully_visible": bool(d.get("fully_visible")),
                 "user_directed": True,
-            }, area
+            }, rank
     return best
 
 
