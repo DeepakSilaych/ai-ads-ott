@@ -1,1 +1,2 @@
 flask>=3.0
+numpy<2  # coqui-tts binaries are built against numpy 1.x ABI
