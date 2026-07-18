@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import {
-  AppShell, Badge, Box, Button, Card, Checkbox, Group, HoverCard, Image, Loader,
+  AppShell, Badge, Box, Button, Card, Group, HoverCard, Image, Loader,
   Paper, ScrollArea, SegmentedControl, Select, Stack, Text, Textarea, Title, Tooltip, rem,
 } from '@mantine/core'
 import {
@@ -111,10 +111,12 @@ function AudioBranding({ video, analysis }) {
   const [gap, setGap] = useState(null)
   const [swapIdx, setSwapIdx] = useState(null)
   const [context, setContext] = useState('')
-  const [chain, setChain] = useState(false)
   const [busy, setBusy] = useState(false)
   const [results, setResults] = useState([])
   const [error, setError] = useState(null)
+  // edits stack automatically: first edit starts from the original,
+  // every subsequent edit chains on top of the previous result
+  const chain = results.length > 0
 
   useEffect(() => { api('/api/brands').then(setBrands) }, [])
 
@@ -137,7 +139,7 @@ function AudioBranding({ video, analysis }) {
         body: JSON.stringify({
           filename: video.filename,
           swap_index: +swapIdx,
-          chain: chain && results.length > 0,
+          chain,
         }),
       }).then((r) => r.json())
     } else {
@@ -151,7 +153,7 @@ function AudioBranding({ video, analysis }) {
           start_ts: slot.start_ts,
           gap_duration: slot.duration,
           scene_context: context || sceneDefault,
-          chain: chain && results.length > 0,
+          chain,
         }),
       }).then((r) => r.json())
     }
@@ -187,13 +189,8 @@ function AudioBranding({ video, analysis }) {
                 }))}
                 value={swapIdx} onChange={setSwapIdx}
               />
-              <Checkbox
-                size="xs" label="stack on previous result"
-                checked={chain} onChange={(e) => setChain(e.currentTarget.checked)}
-                disabled={results.length === 0} mb={6}
-              />
               <Button size="xs" onClick={generate} loading={busy} disabled={swapIdx === null}>
-                Re-voice line
+                {chain ? '+ Add re-voiced line' : 'Re-voice line'}
               </Button>
             </Group>
       )}
@@ -210,13 +207,8 @@ function AudioBranding({ video, analysis }) {
               label="Ad gap" size="xs" w={200}
               data={gaps} value={gap} onChange={setGap}
             />
-            <Checkbox
-              size="xs" label="stack on previous result"
-              checked={chain} onChange={(e) => setChain(e.currentTarget.checked)}
-              disabled={results.length === 0} mb={6}
-            />
             <Button size="xs" onClick={generate} loading={busy} disabled={!brand || gap === null}>
-              Generate audio ad
+              {chain ? '+ Add audio ad' : 'Generate audio ad'}
             </Button>
           </Group>
           <Textarea
@@ -231,14 +223,32 @@ function AudioBranding({ video, analysis }) {
 
       {latest && (
         <Box mt="md">
-          <Group gap={8} mb={6}>
-            <Badge size="sm" color="teal" variant="light">processed</Badge>
-            <Text size="xs" c="dimmed">
-              {results.length} placement{results.length > 1 ? 's' : ''} — latest: {latest.script
-                ? `"${latest.script}" at ${latest.start_ts}s`
-                : `"${latest.line_after}" (inserted "${latest.spoken}" at ${latest.at_ts}s, ${latest.engine})`}
-            </Text>
+          <Group gap={8} mb={6} justify="space-between">
+            <Group gap={8}>
+              <Badge size="sm" color="teal" variant="light">
+                {results.length} edit{results.length > 1 ? 's' : ''} stacked
+              </Badge>
+              <Text size="xs" c="dimmed">next edit adds on top of this result</Text>
+            </Group>
+            <Button size="compact-xs" variant="subtle" color="red" onClick={() => setResults([])}>
+              Reset stack
+            </Button>
           </Group>
+          <Stack gap={4} mb="sm">
+            {results.map((r, i) => (
+              <Group key={r.key} gap={8}>
+                <Badge size="xs" variant="outline" color="gray">#{i + 1}</Badge>
+                <Badge size="xs" variant="light" color={r.script ? 'indigo' : 'pink'}>
+                  {r.script ? 'gap spot' : 'dialogue swap'}
+                </Badge>
+                <Text size="xs" c="dimmed" lineClamp={1} style={{ flex: 1 }}>
+                  {r.script
+                    ? `"${r.script}" @ ${r.start_ts}s`
+                    : `"${r.line_after}" @ ${r.at_ts}s (${r.engine})`}
+                </Text>
+              </Group>
+            ))}
+          </Stack>
           <Player key={latest.key} src={`${latest.output}?v=${latest.key}`} />
         </Box>
       )}
