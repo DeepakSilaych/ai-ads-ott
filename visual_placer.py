@@ -274,6 +274,10 @@ def run_track(filename, track, brand_name, chain=False, duration=None, windows=N
             else:
                 splice_video(src_v, step_out, edited, s, e)
             src_v = step_out
+        if len(skipped) == len(windows):
+            raise RuntimeError(
+                f"{model_name} failed on every window ({len(windows)} skipped) — "
+                "no edit was made; try quality: final (aleph2)")
         return {
             "type": "visual", "brand": brand_name, "surface": track.get("surface"),
             "windows": [[round(s, 2), round(e, 2)] for s, e in windows],
