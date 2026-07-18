@@ -259,10 +259,20 @@ def place_visual():
             tid = slot.get('track_id')
             track = tracks[tid] if tid is not None else None
         if track:
+            # dense on-demand index of the chosen surface across the WHOLE
+            # video (cached in the analysis) — detection keyframes are sparse
+            if 'indexed' not in track:
+                video_path = os.path.join(
+                    app.config['UPLOAD_FOLDER'], 'original', data['filename'])
+                track['indexed'] = detector.index_surface(
+                    video_path, video_id, track['surface'])
+                with open(_result_path(video_id), 'w') as f:
+                    json.dump(analysis, f)
             result = visual_placer.run_track(
                 filename=data['filename'], track=track,
                 brand_name=data['brand'], chain=chain,
-                duration=analysis.get('duration'))
+                duration=analysis.get('duration'),
+                windows=[list(w) for w in track['indexed']['windows']] or None)
         else:
             slot = analysis['visual_slots'][int(data['slot_index'])]
             result = visual_placer.run(

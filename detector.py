@@ -10,7 +10,8 @@ from concurrent.futures import ThreadPoolExecutor
 import requests
 
 from prompts import (VISUAL_PLACEMENT_PROMPT, SCENE_INTEGRATION_PROMPT,
-                     DIALOGUE_SWAP_PROMPT, LIP_SYNC_CHECK_PROMPT)
+                     DIALOGUE_SWAP_PROMPT, LIP_SYNC_CHECK_PROMPT,
+                     SURFACE_INDEX_PROMPT)
 from brands_catalog import catalog_for_prompt
 
 BASE_DIR = os.path.dirname(__file__)
@@ -257,6 +258,64 @@ def dialogue_gaps(transcript, duration, min_gap_s=2.0):
             })
         prev_end = max(prev_end, end)
     return gaps
+
+
+def index_surface(video_path, video_id, surface, step_s=0.5):
+    """Densely index the WHOLE video for one chosen surface: sample every
+    step_s, ask the VLM only 'is it visible (bbox)?', and merge consecutive
+    positives into visibility windows. Run on demand when a surface is
+    picked for editing — cheap (~2 calls/sec of video) and far more accurate
+    than the sparse detection keyframes."""
+    api_key = _api_key()
+    out_dir = os.path.join(FRAMES_DIR, f"{video_id}_index")
+    os.makedirs(out_dir, exist_ok=True)
+    subprocess.run(
+        ["ffmpeg", "-y", "-i", video_path,
+         "-vf", f"fps=1/{step_s},scale=640:-2", "-q:v", "6",
+         os.path.join(out_dir, "i%04d.jpg")],
+        capture_output=True, check=True)
+    frames = [(int(n[1:5]) - 1) * step_s for n in sorted(os.listdir(out_dir))]
+    paths = [os.path.join(out_dir, n) for n in sorted(os.listdir(out_dir))]
+
+    prompt = SURFACE_INDEX_PROMPT.replace("{surface}", surface)
+
+    def check(args):
+        ts, fpath = args
+        with open(fpath, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode()
+        try:
+            resp = requests.post(
+                OPENROUTER_URL,
+                headers={"Authorization": f"Bearer {api_key}"},
+                json={"model": VISION_MODEL,
+                      "messages": [{"role": "user", "content": [
+                          {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
+                          {"type": "text", "text": prompt}]}],
+                      "max_tokens": 400},
+                timeout=120)
+            resp.raise_for_status()
+            text = resp.json()["choices"][0]["message"].get("content") or ""
+            m = re.search(r"\{.*\}", text, re.DOTALL)
+            d = json.loads(m.group(0)) if m else {}
+        except Exception:
+            d = {}
+        return ts, bool(d.get("visible")), d.get("bbox")
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = sorted(pool.map(check, zip(frames, paths)))
+
+    windows = []
+    samples = []
+    for ts, visible, bbox in results:
+        samples.append({"ts": ts, "visible": visible, "bbox": bbox})
+        if visible:
+            if windows and ts - windows[-1][1] <= step_s + 0.01:
+                windows[-1][1] = ts + step_s
+            else:
+                windows.append([ts, ts + step_s])
+    return {"surface": surface, "step_s": step_s,
+            "windows": [[round(a, 2), round(b, 2)] for a, b in windows],
+            "samples": samples}
 
 
 def build_visual_tracks(visual_slots, max_gap_s=6.0):

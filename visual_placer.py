@@ -187,7 +187,7 @@ def track_windows(track, duration=None, pad_s=1.0, sample_s=2.0, merge_gap_s=3.0
     return windows
 
 
-def run_track(filename, track, brand_name, chain=False, duration=None):
+def run_track(filename, track, brand_name, chain=False, duration=None, windows=None):
     """Edit EVERY occurrence of a tracked surface in ONE Aleph call:
     cut all the track's windows, concat into a single video, edit it,
     split at the known boundaries, splice each piece back."""
@@ -200,7 +200,19 @@ def run_track(filename, track, brand_name, chain=False, duration=None):
         os.replace(out_path, prev)
         video_path = prev
 
-    windows = track_windows(track, duration)
+    if windows is None:
+        windows = track_windows(track, duration)
+    else:
+        # merge indexed windows that nearly touch; drop blips under 1s
+        merged = []
+        for s, e in windows:
+            if merged and s - merged[-1][1] <= 1.5:
+                merged[-1][1] = e
+            else:
+                merged.append([s, e])
+        windows = [[s, e] for s, e in merged if e - s >= 1.0]
+        if duration:
+            windows = [[s, min(e, duration)] for s, e in windows]
 
     # cut each window at a fixed fps so concat boundaries stay frame-exact
     pieces = []

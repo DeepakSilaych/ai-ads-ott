@@ -124,3 +124,12 @@ The line must be comfortably speakable in {duration} seconds (roughly {max_words
 - Mention the brand name exactly once, naturally.
 - No prices unless the scene is retail. No phone numbers or URLs ever.
 - Write ONLY the spoken line, no quotes, no stage directions, no other text."""
+
+SURFACE_INDEX_PROMPT = """You are checking ONE thing in this video frame: is the following surface/object visible?
+
+Target: {surface}
+
+Return ONLY a JSON object, no other text:
+{"visible": true/false, "bbox": [x1, y1, x2, y2] or null, "fully_visible": true/false}
+
+bbox is normalized 0-1000 (top-left, bottom-right), tightly around the target. fully_visible=false if it is partially cut off by the frame edge or heavily occluded."""
