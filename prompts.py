@@ -68,8 +68,19 @@ DIALOGUE_SWAP_PROMPT = """You are a dialogue editor for branded content. Given a
 ## Brand catalog
 {catalog}
 
+## Target audience
+{audience}
+
 ## Scene context
 {scene_context}
+
+## Audience rule
+Each catalog entry carries an "audience fit" score (0-1) for the target
+segment above. Prefer higher-fit brands: given two swaps of comparable
+naturalness and syllable match, always propose the better-fitting one. But
+audience fit never overrides believability — a high-fit brand that sounds
+absurd in the line is still a reject, and a perfect scene-native brand with
+mediocre fit beats a forced on-target one.
 
 ## PRIME RULE — spoken length must match
 The replaced words are re-voiced inside the SAME time window; the audio edit
@@ -128,6 +139,9 @@ AUDIO_AD_SCRIPT_PROMPT = """You are writing a SHORT in-world audio ad line to be
 ## Brand
 {brand}
 
+## Target audience
+{audience}
+
 ## Scene context
 {scene_context}
 
@@ -137,6 +151,8 @@ The line must be comfortably speakable in {duration} seconds (roughly {max_words
 ## Rules
 - Match the scene's world. Grocery store -> PA announcement. Car scene -> radio spot. Sports -> stadium announcer.
 - Mention the brand name exactly once, naturally.
+- Pitch the wording at the target audience above — vocabulary, references, and
+  energy should land for that cohort. Never name the segment out loud.
 - No prices unless the scene is retail. No phone numbers or URLs ever.
 - Write ONLY the spoken line, no quotes, no stage directions, no other text."""
 

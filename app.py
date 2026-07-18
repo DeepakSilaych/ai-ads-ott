@@ -216,7 +216,8 @@ def rescan_swaps():
         scene_ctx = '; '.join(i.get('description', '') for i in analysis.get('integrations', []))
         swaps = detector.detect_dialogue_swaps(
             analysis['transcript'], detector._api_key(),
-            scene_context=scene_ctx, brand=data.get('brand'))
+            scene_context=scene_ctx, brand=data.get('brand'),
+            profile=data.get('audience'))
         frames_dir = os.path.join(detector.FRAMES_DIR, video_id)
         frames = [((int(n[1:5]) - 1) * detector.FRAME_INTERVAL_S, os.path.join(frames_dir, n))
                   for n in sorted(os.listdir(frames_dir))] if os.path.exists(frames_dir) else []
@@ -235,8 +236,57 @@ def rescan_swaps():
 
 @app.route('/api/brands')
 def list_brands():
+    """Catalog, optionally ranked for ?audience=<profile id> so the picker
+    surfaces on-target brands first (each tagged with audience_score)."""
     from brands_catalog import load_catalog
-    return jsonify(load_catalog())
+    import audience
+    catalog = load_catalog()
+    profile = request.args.get('audience')
+    if profile:
+        catalog = audience.rank(catalog, profile)
+    return jsonify(catalog)
+
+
+@app.route('/api/audiences')
+def list_audiences():
+    """Preset viewer segments available for targeting."""
+    import audience
+    return jsonify(audience.PROFILES)
+
+
+@app.route('/api/recommend', methods=['POST'])
+def recommend_brands():
+    """Rank brands for a viewer segment, blended with scene fit from this
+    video's analysis. Drives 'which product for which demographic'."""
+    import audience
+    from brands_catalog import load_catalog
+    data = request.json or {}
+    profile = data.get('audience')
+    scene_terms = set()
+    if data.get('filename'):
+        try:
+            with open(_result_path(_video_id(data['filename']))) as f:
+                analysis = json.load(f)
+            blob = ' '.join(i.get('description', '')
+                            for i in analysis.get('integrations', [])).lower()
+            blob += ' ' + ' '.join(c for i in analysis.get('integrations', [])
+                                   for c in i.get('example_categories', [])).lower()
+            scene_terms = {w for w in blob.replace(',', ' ').split() if len(w) > 3}
+        except (OSError, json.JSONDecodeError, KeyError):
+            pass  # no analysis yet — fall back to pure audience ranking
+
+    out = []
+    for b in audience.rank(load_catalog(), profile):
+        hits = [s for s in b.get('scene_fit', []) + b.get('products', [])
+                if any(t in s.lower() or s.lower() in t for t in scene_terms)]
+        scene_score = min(1.0, len(hits) / 2) if scene_terms else 0.5
+        b['scene_score'] = round(scene_score, 3)
+        b['match_score'] = round(0.6 * b['audience_score'] + 0.4 * scene_score, 3)
+        b['why'] = (f"audience fit {b['audience_score']:.2f}"
+                    + (f"; matches scene: {', '.join(hits[:3])}" if hits else ""))
+        out.append(b)
+    out.sort(key=lambda b: -b['match_score'])
+    return jsonify({'audience': audience.describe(profile), 'brands': out})
 
 
 @app.route('/api/place_audio', methods=['POST'])
@@ -252,6 +302,7 @@ def place_audio():
             start_ts=float(data['start_ts']),
             gap_duration=float(data.get('gap_duration', 10)),
             scene_context=data.get('scene_context', ''),
+            profile=data.get('audience'),
         )
         result['tts_audio'] = '/' + os.path.relpath(result['tts_audio'], os.path.dirname(__file__))
         result['output'] = '/' + os.path.relpath(result['output'], os.path.dirname(__file__))

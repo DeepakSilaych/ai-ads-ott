@@ -8,7 +8,13 @@
       "products": ["smartphones", "laptops", "earbuds"],
       "generic_terms": ["phone", "call me", "text me", "laptop", "earbuds"],
       "tagline": "",
-      "scene_fit": ["office", "home", "city street", "any modern scene"]
+      "scene_fit": ["office", "home", "city street", "any modern scene"],
+      "audience": {
+        "age": ["18-24", "25-34", "35-49", "50-64"],
+        "gender": "any",
+        "income": ["mid", "high"],
+        "interests": ["tech", "music", "travel", "wellness", "social"]
+      }
     },
     {
       "name": "Nike",
@@ -16,7 +22,13 @@
       "products": ["sneakers", "sportswear"],
       "generic_terms": ["shoes", "sneakers", "running", "workout"],
       "tagline": "Just do it",
-      "scene_fit": ["sports", "gym", "street", "school", "running"]
+      "scene_fit": ["sports", "gym", "street", "school", "running"],
+      "audience": {
+        "age": ["13-17", "18-24", "25-34", "35-49"],
+        "gender": "any",
+        "income": ["mid", "high"],
+        "interests": ["sports", "fitness", "streetwear", "music", "social"]
+      }
     },
     {
       "name": "Uber",
@@ -24,7 +36,13 @@
       "products": ["rideshare"],
       "generic_terms": ["ride", "taxi", "cab", "get a ride", "pick us up"],
       "tagline": "",
-      "scene_fit": ["city street", "night out", "airport", "leaving a place"]
+      "scene_fit": ["city street", "night out", "airport", "leaving a place"],
+      "audience": {
+        "age": ["18-24", "25-34", "35-49"],
+        "gender": "any",
+        "income": ["mid", "high"],
+        "interests": ["nightlife", "travel", "convenience", "tech", "social"]
+      }
     }
   ]
 }

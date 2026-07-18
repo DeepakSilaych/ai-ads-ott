@@ -8,7 +8,13 @@
       "products": ["frozen waffles"],
       "generic_terms": ["waffles", "breakfast", "frozen food"],
       "tagline": "L'Eggo my Eggo",
-      "scene_fit": ["kitchen", "breakfast", "grocery store", "freezer aisle", "kids"]
+      "scene_fit": ["kitchen", "breakfast", "grocery store", "freezer aisle", "kids"],
+      "audience": {
+        "age": ["13-17", "25-34", "35-49"],
+        "gender": "any",
+        "income": ["low", "mid"],
+        "interests": ["kids", "home", "cooking", "convenience", "value"]
+      }
     },
     {
       "name": "McDonald's",
@@ -16,7 +22,13 @@
       "products": ["burgers", "fries", "fast food"],
       "generic_terms": ["burger", "fries", "fast food", "drive-through", "grab a bite"],
       "tagline": "I'm lovin' it",
-      "scene_fit": ["road trip", "city street", "late night", "friends hanging out"]
+      "scene_fit": ["road trip", "city street", "late night", "friends hanging out"],
+      "audience": {
+        "age": ["13-17", "18-24", "25-34", "35-49"],
+        "gender": "any",
+        "income": ["low", "mid"],
+        "interests": ["convenience", "value", "social", "kids", "nightlife"]
+      }
     },
     {
       "name": "Lay's",
@@ -24,7 +36,13 @@
       "products": ["potato chips"],
       "generic_terms": ["chips", "snacks", "crisps"],
       "tagline": "Betcha can't eat just one",
-      "scene_fit": ["party", "couch", "movie night", "grocery store"]
+      "scene_fit": ["party", "couch", "movie night", "grocery store"],
+      "audience": {
+        "age": ["13-17", "18-24", "25-34", "35-49", "50-64"],
+        "gender": "any",
+        "income": ["low", "mid"],
+        "interests": ["social", "value", "home", "sports", "gaming"]
+      }
     },
     {
       "name": "Domino's",
@@ -32,7 +50,13 @@
       "products": ["pizza delivery"],
       "generic_terms": ["pizza", "order food", "delivery"],
       "tagline": "Oh yes we did",
-      "scene_fit": ["party", "late night", "office", "friends hanging out"]
+      "scene_fit": ["party", "late night", "office", "friends hanging out"],
+      "audience": {
+        "age": ["18-24", "25-34", "35-49"],
+        "gender": "any",
+        "income": ["low", "mid"],
+        "interests": ["convenience", "social", "gaming", "nightlife", "value"]
+      }
     }
   ]
 }

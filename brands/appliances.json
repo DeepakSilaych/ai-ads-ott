@@ -8,7 +8,13 @@
       "products": ["refrigerators", "washing machines", "TVs", "home appliances"],
       "generic_terms": ["fridge", "refrigerator", "freezer", "washing machine", "TV", "the stove", "appliance"],
       "tagline": "Life's Good",
-      "scene_fit": ["kitchen", "home", "living room", "laundry", "home tour", "cooking"]
+      "scene_fit": ["kitchen", "home", "living room", "laundry", "home tour", "cooking"],
+      "audience": {
+        "age": ["25-34", "35-49", "50-64", "65+"],
+        "gender": "any",
+        "income": ["mid", "high"],
+        "interests": ["home", "cooking", "tech", "kids", "wellness"]
+      }
     }
   ]
 }

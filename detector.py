@@ -13,6 +13,7 @@ from prompts import (VISUAL_PLACEMENT_PROMPT, SCENE_INTEGRATION_PROMPT,
                      DIALOGUE_SWAP_PROMPT, LIP_SYNC_CHECK_PROMPT,
                      SURFACE_INDEX_PROMPT)
 from brands_catalog import catalog_for_prompt
+import audience
 
 BASE_DIR = os.path.dirname(__file__)
 FRAMES_DIR = os.path.join(BASE_DIR, "static", "uploads", "frames")
@@ -157,7 +158,8 @@ def transcribe(video_path):
     return out
 
 
-def detect_dialogue_swaps(transcript, api_key, scene_context="", samples=5, brand=None):
+def detect_dialogue_swaps(transcript, api_key, scene_context="", samples=5, brand=None,
+                          profile=None):
     """Find minimal brand-mention dialogue edits using the brands catalog.
 
     Samples the LLM several times and merges deduped results — single runs
@@ -168,7 +170,8 @@ def detect_dialogue_swaps(transcript, api_key, scene_context="", samples=5, bran
         merged = {}
         with ThreadPoolExecutor(max_workers=samples) as pool:
             runs = pool.map(
-                lambda _: detect_dialogue_swaps(transcript, api_key, scene_context, samples=1, brand=brand),
+                lambda _: detect_dialogue_swaps(transcript, api_key, scene_context, samples=1,
+                                                brand=brand, profile=profile),
                 range(samples))
         for run in runs:
             for s in run:
@@ -184,7 +187,8 @@ def detect_dialogue_swaps(transcript, api_key, scene_context="", samples=5, bran
         words = " ".join(f"{w['w']}[{w['s']}-{w['e']}]" for w in seg.get("words", []))
         lines.append(words or f"{seg['text']} [{seg['start_ts']}-{seg['end_ts']}]")
     prompt = (DIALOGUE_SWAP_PROMPT
-              .replace("{catalog}", catalog_for_prompt(only=brand))
+              .replace("{catalog}", catalog_for_prompt(only=brand, profile=profile))
+              .replace("{audience}", audience.describe(profile))
               .replace("{scene_context}", scene_context or "unknown"))
     prompt += "\n\n## Transcript (word[start-end] format)\n" + "\n".join(lines)
 

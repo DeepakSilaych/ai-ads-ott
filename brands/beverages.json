@@ -8,7 +8,13 @@
       "products": ["soda", "soft drinks"],
       "generic_terms": ["soda", "drink", "something to drink", "cold drink"],
       "tagline": "Taste the feeling",
-      "scene_fit": ["diner", "party", "beach", "movie night", "grocery store"]
+      "scene_fit": ["diner", "party", "beach", "movie night", "grocery store"],
+      "audience": {
+        "age": ["13-17", "18-24", "25-34", "35-49", "50-64"],
+        "gender": "any",
+        "income": ["low", "mid", "high"],
+        "interests": ["social", "music", "sports", "value", "kids"]
+      }
     },
     {
       "name": "Red Bull",
@@ -16,7 +22,13 @@
       "products": ["energy drinks"],
       "generic_terms": ["energy drink", "caffeine", "stay awake"],
       "tagline": "Gives you wings",
-      "scene_fit": ["studying", "gaming", "sports", "late night", "driving"]
+      "scene_fit": ["studying", "gaming", "sports", "late night", "driving"],
+      "audience": {
+        "age": ["18-24", "25-34"],
+        "gender": "male",
+        "income": ["low", "mid"],
+        "interests": ["gaming", "sports", "energy", "nightlife", "fitness"]
+      }
     },
     {
       "name": "Starbucks",
@@ -24,7 +36,13 @@
       "products": ["coffee"],
       "generic_terms": ["coffee", "latte", "grab a coffee", "cafe"],
       "tagline": "",
-      "scene_fit": ["morning", "office", "city street", "meeting", "date"]
+      "scene_fit": ["morning", "office", "city street", "meeting", "date"],
+      "audience": {
+        "age": ["18-24", "25-34", "35-49"],
+        "gender": "female",
+        "income": ["mid", "high"],
+        "interests": ["coffee", "tech", "travel", "wellness", "social"]
+      }
     }
   ]
 }

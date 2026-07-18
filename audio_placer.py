@@ -14,6 +14,7 @@ import requests
 
 from prompts import AUDIO_AD_SCRIPT_PROMPT
 from brands_catalog import load_catalog
+import audience
 
 BASE_DIR = os.path.dirname(__file__)
 EDITED_DIR = os.path.join(BASE_DIR, "static", "uploads", "edited")
@@ -41,12 +42,13 @@ def _brand_entry(brand_name):
     raise ValueError(f"brand {brand_name!r} not in catalog")
 
 
-def write_ad_script(brand_name, scene_context, duration_s):
-    """LLM writes the spoken line for the audio spot."""
+def write_ad_script(brand_name, scene_context, duration_s, profile=None):
+    """LLM writes the spoken line for the audio spot, pitched at `profile`."""
     b = _brand_entry(brand_name)
     max_words = max(6, int(duration_s * 2.3))
     prompt = (AUDIO_AD_SCRIPT_PROMPT
               .replace("{brand}", json.dumps(b))
+              .replace("{audience}", audience.describe(profile))
               .replace("{scene_context}", scene_context or "unknown")
               .replace("{duration}", f"{duration_s:.0f}")
               .replace("{max_words}", str(max_words)))
@@ -134,7 +136,8 @@ def place_audio_ad(video_path, out_path, ad_audio_path, start_ts, duck_db=-14):
     return {"start_ts": start_ts, "end_ts": round(end_ts, 2), "duration": round(ad_dur, 2)}
 
 
-def run(filename, brand_name, start_ts, gap_duration, scene_context="", chain=False):
+def run(filename, brand_name, start_ts, gap_duration, scene_context="", chain=False,
+        profile=None):
     """Full stage-3 pass. Returns metadata dict.
 
     chain=True uses the previously edited output as the source, so multiple
@@ -149,7 +152,7 @@ def run(filename, brand_name, start_ts, gap_duration, scene_context="", chain=Fa
         os.replace(out_path, prev)
         video_path = prev
 
-    script = write_ad_script(brand_name, scene_context, min(gap_duration - 1, 8))
+    script = write_ad_script(brand_name, scene_context, min(gap_duration - 1, 8), profile)
     safe = re.sub(r"[^a-z0-9]+", "_", brand_name.lower())
     tts_path = os.path.join(TTS_DIR, f"{safe}_{int(start_ts)}.mp3")
     tts_path = synthesize(script, tts_path)

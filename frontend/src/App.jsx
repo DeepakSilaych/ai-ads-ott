@@ -176,7 +176,23 @@ function AudioBranding({ video, analysis, resume }) {
   // every subsequent edit chains on top of the previous result
   const chain = results.length > 0 || !!sessionId
 
-  useEffect(() => { api('/api/brands').then(setBrands) }, [])
+  // audience targeting: reorders the brand pickers by demographic fit and
+  // is forwarded to the backend so swap/script generation is on-target too
+  const [audiences, setAudiences] = useState([])
+  const [audienceId, setAudienceId] = useState(null)
+
+  useEffect(() => { api('/api/audiences').then(setAudiences) }, [])
+  useEffect(() => {
+    api(audienceId ? `/api/brands?audience=${audienceId}` : '/api/brands').then(setBrands)
+  }, [audienceId])
+
+  // brand options carry the fit score once a segment is selected
+  const brandOptions = brands.map((b) => ({
+    value: b.name,
+    label: b.audience_score !== undefined
+      ? `${b.name} — fit ${Math.round(b.audience_score * 100)}%`
+      : b.name,
+  }))
 
   const [swapBrand, setSwapBrand] = useState(null)
   const [rescanning, setRescanning] = useState(false)
@@ -228,6 +244,7 @@ function AudioBranding({ video, analysis, resume }) {
           start_ts: slot.start_ts,
           gap_duration: slot.duration,
           scene_context: context || sceneDefault,
+          audience: audienceId,
           chain,
           session_id: sessionId,
         }),
@@ -281,6 +298,20 @@ function AudioBranding({ video, analysis, resume }) {
         />
       </Group>
 
+      <Group align="flex-end" gap="sm" mb="sm">
+        <Select
+          label="Target audience" size="xs" w={260} clearable
+          placeholder="All viewers (no targeting)"
+          data={audiences.map((a) => ({ value: a.id, label: a.label }))}
+          value={audienceId} onChange={setAudienceId}
+        />
+        <Text size="xs" c="dimmed" pb={6}>
+          {audienceId
+            ? 'Brands ranked by demographic fit; swap + script generation targets this segment.'
+            : 'Pick a segment to bias brand choice toward that demographic.'}
+        </Text>
+      </Group>
+
       {mode === 'visual' && (
         (analysis.visual_slots || []).length === 0
           ? <Text size="xs" c="dimmed">No visual placements detected for this video.</Text>
@@ -295,7 +326,7 @@ function AudioBranding({ video, analysis, resume }) {
               />
               <Select
                 label="Brand" size="xs" w={160} searchable
-                data={brands.map((b) => ({ value: b.name, label: b.name }))}
+                data={brandOptions}
                 value={brand} onChange={setBrand}
               />
               <Select
@@ -317,7 +348,7 @@ function AudioBranding({ video, analysis, resume }) {
           <Group align="flex-end" gap="sm" wrap="wrap" mb={liveSwaps.length ? 'xs' : 0}>
             <Select
               label="Target brand (optional)" size="xs" w={180} clearable searchable
-              data={brands.map((b) => ({ value: b.name, label: b.name }))}
+              data={brandOptions}
               value={swapBrand} onChange={setSwapBrand}
             />
             <Button size="xs" variant="light" loading={rescanning} onClick={async () => {
@@ -325,7 +356,7 @@ function AudioBranding({ video, analysis, resume }) {
               const res = await fetch('/api/rescan_swaps', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ filename: video.filename, brand: swapBrand }),
+                body: JSON.stringify({ filename: video.filename, brand: swapBrand, audience: audienceId }),
               }).then((r) => r.json())
               setRescanning(false)
               if (!res.error) { setLiveSwaps(res.dialogue_swaps); setSwapIdx(null) }
@@ -356,7 +387,12 @@ function AudioBranding({ video, analysis, resume }) {
           <Group align="flex-end" gap="sm" wrap="wrap">
             <Select
               label="Brand" size="xs" w={160} searchable
-              data={brands.map((b) => ({ value: b.name, label: `${b.name} (${b.category})` }))}
+              data={brands.map((b) => ({
+                value: b.name,
+                label: b.audience_score !== undefined
+                  ? `${b.name} (${b.category}) — fit ${Math.round(b.audience_score * 100)}%`
+                  : `${b.name} (${b.category})`,
+              }))}
               value={brand} onChange={setBrand}
             />
             <Select
