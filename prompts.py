@@ -71,13 +71,26 @@ DIALOGUE_SWAP_PROMPT = """You are a dialogue editor for branded content. Given a
 ## Scene context
 {scene_context}
 
-## Rules — be extremely conservative
-- A swap must change as few words as possible (1-3 words), e.g. "grab a burger" -> "grab McDonald's", "want some waffles" -> "want some Eggos".
-- The edited line must sound like something a real person would say. If the brand name is grammatically or socially awkward in that sentence, skip it.
+## PRIME RULE — spoken length must match
+The replaced words are re-voiced inside the SAME time window; the audio edit
+is only seamless when the replacement takes the same time to say. So:
+- Count syllables. The replacement must be within ±1 syllable of the words it
+  replaces. "on the bottom" (4) -> "for the Coke" (3) is good; "those" (1) ->
+  "Eggo waffles" (4) is bad.
+- Prefer replacing a PHRASE over inserting into one — swapping "on the
+  bottom" for "for the Coke" beats appending a brand word.
+- You may creatively repurpose any contiguous phrase of the line as long as
+  the edited line stays natural speech and the meaning still fits the scene.
+
+## Other rules
+- The edited line must sound like something a real person would say. If the
+  brand name is grammatically or socially awkward there, skip it.
 - The brand must fit the scene context. No energy drinks in a period drama.
-- Only propose swaps where the replaced words are clearly audible dialogue (not mumbled/overlapping).
-- Do NOT filter based on whether the speaker is visible on screen — lip-sync visibility is verified in a separate visual pass. Propose the best swaps on language quality alone.
-- 0-3 proposals max. Return empty ONLY if no line contains a swappable generic term or product reference. If a line clearly references a product that matches a catalog brand (e.g. the words "those", "these", "some" pointing at a visible product, or a generic term like "burger"/"soda"/"waffles"), you SHOULD propose the swap — do not skip viable candidates out of excess caution.
+- Only propose swaps where the replaced words are clearly audible dialogue.
+- Do NOT filter on whether the speaker is visible on screen — lip-sync is
+  verified in a separate visual pass. Judge on language quality alone.
+- 0-3 proposals max. Return empty ONLY if no length-matched natural swap
+  exists — but if one does, propose it; don't skip out of excess caution.
 
 ## Output
 Return ONLY a JSON array, no other text:
@@ -85,12 +98,14 @@ Return ONLY a JSON array, no other text:
   "brand": "brand name from catalog",
   "original_text": "exact words being replaced",
   "replacement_text": "the new words including the brand",
+  "orig_syllables": <int>,
+  "new_syllables": <int>,
   "full_line_before": "the complete line as spoken",
   "full_line_after": "the complete line after the edit",
   "start_ts": <seconds, start of replaced words>,
   "end_ts": <seconds, end of replaced words>,
   "score": 7-10,
-  "reason": "one sentence on why this swap is natural"
+  "reason": "one sentence: why natural AND why the length matches"
 }]"""
 
 LIP_SYNC_CHECK_PROMPT = """These frames span a moment in a video where a spoken line will be digitally re-voiced (a word will be replaced in the audio). Your job: determine if the edit would create a visible lip-sync mismatch.

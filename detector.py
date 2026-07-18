@@ -202,9 +202,30 @@ def detect_dialogue_swaps(transcript, api_key, scene_context="", samples=5, bran
         return []
     try:
         out = json.loads(match.group(0))
-        return [o for o in out if isinstance(o, dict) and "brand" in o]
+        return [o for o in out if isinstance(o, dict) and "brand" in o
+                and _length_fit(o)]
     except json.JSONDecodeError:
         return []
+
+
+def _syllables(text):
+    """Rough syllable count: vowel groups per word (good enough for a gate)."""
+    total = 0
+    for w in re.findall(r"[a-zA-Z']+", text):
+        groups = len(re.findall(r"[aeiouyAEIOUY]+", w))
+        total += max(1, groups)
+    return total
+
+
+def _length_fit(swap, tolerance=2):
+    """Verify the replacement's spoken length matches the replaced words —
+    the audio edit is only seamless when durations line up. Model-reported
+    syllable counts are not trusted; we recount."""
+    orig = _syllables(swap.get("original_text") or "")
+    new = _syllables(swap.get("replacement_text") or "")
+    swap["orig_syllables"] = orig
+    swap["new_syllables"] = new
+    return abs(new - orig) <= tolerance
 
 
 def check_lip_sync(swap, frames, api_key, pad_s=0.4):
