@@ -450,4 +450,5 @@ def detection_status(video_id):
 if __name__ == '__main__':
     # reloader off: code edits during long-running placement requests were
     # killing in-flight jobs; restart manually after backend changes
-    app.run(debug=True, use_reloader=False, port=5050)
+    # threaded: long-running placement renders must not block other requests
+    app.run(debug=True, use_reloader=False, threaded=True, port=5050)
