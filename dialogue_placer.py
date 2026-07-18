@@ -258,17 +258,26 @@ def run_voicecraft(filename, swap, transcript, chain=False, pad_s=1.5):
     if not ok:
         raise RuntimeError("VoiceCraft never spoke the brand word across seeds")
 
-    # remix edited vocals with the untouched background stem
-    final_clip = os.path.join(TTS_DIR, "vc_final_clip.wav")
+    # SURGICAL SPLICE: only the regenerated words enter the mix — everything
+    # else stays the original audio (splicing the whole regenerated clip made
+    # the entire line sound encodec-processed).
+    probe = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+         "-of", "csv=p=0", edited_wav], capture_output=True, text=True, check=True)
+    edited_len = float(probe.stdout.strip())
+    clip_len = clip_end - clip_start
+    mask_rel_start = mask_start - clip_start
+    mask_rel_end = swap["end_ts"] - clip_start
+    # generated span in the edited clip: same start; tail is anchored to the end
+    gen_end = edited_len - (clip_len - mask_rel_end)
+    span_wav = os.path.join(TTS_DIR, "vc_span.wav")
     subprocess.run(
-        ["ffmpeg", "-y", "-i", edited_wav, "-i", background_wav,
-         "-filter_complex",
-         "[0:a]aresample=44100[v];[1:a]aresample=44100[b];"
-         "[v][b]amix=inputs=2:duration=longest:normalize=0[out]",
-         "-map", "[out]", final_clip],
-        capture_output=True, check=True)
-
-    _splice_clip(video_path, out_path, final_clip, clip_start, clip_end)
+        ["ffmpeg", "-y", "-ss", f"{max(mask_rel_start, 0):.3f}",
+         "-to", f"{max(gen_end, mask_rel_start + 0.2):.3f}", "-i", edited_wav,
+         "-af", "afade=t=in:d=0.03,areverse,afade=t=in:d=0.03,areverse",
+         span_wav], capture_output=True, check=True)
+    fitted = fit_word_audio(span_wav, (mask_rel_end - mask_rel_start) + 0.35)
+    dur = overlay_word(video_path, out_path, fitted, mask_start, duck_db=-28)
     return {
         "spoken": swap.get("replacement_text"),
         "at_ts": swap["start_ts"],
