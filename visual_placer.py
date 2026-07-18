@@ -30,6 +30,7 @@ BRAND_STYLE = {
     "Apple": ("#1D1D1F", "#F5F5F7"),
     "Nike": ("#111111", "#FFFFFF"),
     "Uber": ("#000000", "#FFFFFF"),
+    "LG": ("#A50034", "#FFFFFF"),
 }
 
 

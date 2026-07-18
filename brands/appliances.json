@@ -1,0 +1,14 @@
+{
+  "category": "appliances",
+  "display": "Home Appliances",
+  "brands": [
+    {
+      "name": "LG",
+      "spoken_name": "LG",
+      "products": ["refrigerators", "washing machines", "TVs", "home appliances"],
+      "generic_terms": ["fridge", "refrigerator", "freezer", "washing machine", "TV", "the stove", "appliance"],
+      "tagline": "Life's Good",
+      "scene_fit": ["kitchen", "home", "living room", "laundry", "home tour", "cooking"]
+    }
+  ]
+}
