@@ -23,15 +23,18 @@ def load_catalog():
 
 def catalog_for_prompt(only=None, profile=None):
     """Compact text block describing brands for LLM context.
-    only=<brand name> restricts to that brand (user-directed targeting).
+    only=<brand name or list of names> restricts to those brands.
     profile=<audience id or dict> ranks brands best-match-first and annotates
     each with its audience fit, so the LLM prefers on-target brands."""
     catalog = load_catalog()
     if profile is not None:
         catalog = audience.rank(catalog, profile)
+    if isinstance(only, str):
+        only = [only]
+    wanted = {n.lower() for n in only} if only else None
     lines = []
     for b in catalog:
-        if only and b["name"].lower() != only.lower():
+        if wanted and b["name"].lower() not in wanted:
             continue
         line = (
             f"- {b['name']} (say: \"{b['spoken_name']}\") | {b['category']} | "

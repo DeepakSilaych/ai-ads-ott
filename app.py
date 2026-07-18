@@ -144,6 +144,25 @@ def _session_required(e):
     return jsonify({'error': str(e)}), 400
 
 
+
+def _create_session(filename, note=None):
+    import time
+    import uuid
+    sessions = _load_sessions()
+    session = {
+        'id': uuid.uuid4().hex[:10],
+        'filename': filename,
+        'created_at': time.strftime('%Y-%m-%d %H:%M:%S'),
+        'edits': [],
+    }
+    if note:
+        session['note'] = note
+    session['video'] = f"/static/uploads/sessions/{session['id']}.mp4"
+    sessions.insert(0, session)
+    _save_sessions(sessions)
+    return session
+
+
 @app.route('/api/sessions', methods=['POST'])
 def create_session():
     """Explicitly start an ad-integration session for a video."""
@@ -152,17 +171,7 @@ def create_session():
     filename = request.json.get('filename')
     if not filename:
         return jsonify({'error': 'filename required'}), 400
-    sessions = _load_sessions()
-    session = {
-        'id': uuid.uuid4().hex[:10],
-        'filename': filename,
-        'created_at': time.strftime('%Y-%m-%d %H:%M:%S'),
-        'edits': [],
-    }
-    session['video'] = f"/static/uploads/sessions/{session['id']}.mp4"
-    sessions.insert(0, session)
-    _save_sessions(sessions)
-    return jsonify(session)
+    return jsonify(_create_session(filename))
 
 
 def _record_edit(kind, filename, result, chain, session_id=None):
@@ -216,7 +225,7 @@ def rescan_swaps():
         scene_ctx = '; '.join(i.get('description', '') for i in analysis.get('integrations', []))
         swaps = detector.detect_dialogue_swaps(
             analysis['transcript'], detector._api_key(),
-            scene_context=scene_ctx, brand=data.get('brand'),
+            scene_context=scene_ctx, brand=data.get('brands') or data.get('brand'),
             profile=data.get('audience'))
         frames_dir = os.path.join(detector.FRAMES_DIR, video_id)
         frames = [((int(n[1:5]) - 1) * detector.FRAME_INTERVAL_S, os.path.join(frames_dir, n))
@@ -232,6 +241,29 @@ def rescan_swaps():
         return jsonify({'dialogue_swaps': swaps})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+
+@app.route('/api/place_variants', methods=['POST'])
+def place_variants():
+    """Multi-brand generation: render the SAME placement once per brand,
+    each variant in its own auto-created session."""
+    data = dict(request.json)
+    brands = data.pop('brands', None) or []
+    kind = data.pop('kind', 'visual')  # visual | gap_spot
+    if not brands:
+        return jsonify({'error': 'brands list required'}), 400
+    results = []
+    for brand in brands:
+        session = _create_session(data['filename'], note=f'variant: {brand}')
+        payload = dict(data, brand=brand, session_id=session['id'])
+        with app.test_request_context(json=payload):
+            resp = place_visual() if kind == 'visual' else place_audio()
+        body = resp[0].get_json() if isinstance(resp, tuple) else resp.get_json()
+        body['brand'] = brand
+        body['session_id'] = session['id']
+        results.append(body)
+    return jsonify({'variants': results})
 
 
 @app.route('/api/brands')

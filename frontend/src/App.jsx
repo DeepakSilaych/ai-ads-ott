@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   AppShell, Badge, Box, Button, Card, Group, HoverCard, Image, Loader,
-  Paper, ScrollArea, SegmentedControl, Select, Stack, Text, Textarea, Title, Tooltip, rem, Modal, FileInput,
+  MultiSelect, Paper, ScrollArea, SegmentedControl, Select, Stack, Text, Textarea, Title, Tooltip, rem, Modal, FileInput,
 } from '@mantine/core'
 import {
   IconMaximize, IconMessage, IconMovie, IconPhoto, IconRefresh, IconScan, IconSparkles, IconVolume, IconWaveSine, IconUpload,
@@ -162,7 +162,7 @@ function AudioBranding({ video, analysis, resume }) {
   const [visualIdx, setVisualIdx] = useState(null)
   const [vQuality, setVQuality] = useState('draft')
   const [brands, setBrands] = useState([])
-  const [brand, setBrand] = useState(null)
+  const [brandSel, setBrandSel] = useState([])
   const [gap, setGap] = useState(null)
   const [swapIdx, setSwapIdx] = useState(null)
   const [context, setContext] = useState('')
@@ -210,13 +210,15 @@ function AudioBranding({ video, analysis, resume }) {
     setBusy(true); setError(null)
     let res
     if (mode === 'visual') {
-      res = await fetch('/api/place_visual', {
+      res = await fetch(brandSel.length > 1 ? '/api/place_variants' : '/api/place_visual', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           filename: video.filename,
           slot_index: +visualIdx,
-          brand,
+          brand: brandSel[0],
+          brands: brandSel.length > 1 ? brandSel : undefined,
+          kind: 'visual',
           quality: vQuality,
           chain,
           session_id: sessionId,
@@ -235,12 +237,14 @@ function AudioBranding({ video, analysis, resume }) {
       }).then((r) => r.json())
     } else {
       const slot = analysis.audio_slots[+gap]
-      res = await fetch('/api/place_audio', {
+      res = await fetch(brandSel.length > 1 ? '/api/place_variants' : '/api/place_audio', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           filename: video.filename,
-          brand,
+          brand: brandSel[0],
+          brands: brandSel.length > 1 ? brandSel : undefined,
+          kind: 'gap_spot',
           start_ts: slot.start_ts,
           gap_duration: slot.duration,
           scene_context: context || sceneDefault,
@@ -252,6 +256,12 @@ function AudioBranding({ video, analysis, resume }) {
     }
     setBusy(false)
     if (res.error) { setError(res.error); return }
+    if (res.variants) {
+      // multi-brand: each variant lives in its OWN session (not chained)
+      setResults((prev) => [...prev,
+        ...res.variants.map((v, i) => ({ ...v, key: Date.now() + i }))])
+      return
+    }
     if (res.session_id) setSessionId(res.session_id)
     setResults((prev) => [...prev, { ...res, key: Date.now() }])
   }
@@ -324,10 +334,10 @@ function AudioBranding({ video, analysis, resume }) {
                 }))}
                 value={visualIdx} onChange={setVisualIdx}
               />
-              <Select
-                label="Brand" size="xs" w={160} searchable
+              <MultiSelect
+                label="Brand(s)" size="xs" w={240} searchable
                 data={brandOptions}
-                value={brand} onChange={setBrand}
+                value={brandSel} onChange={setBrandSel}
               />
               <Select
                 label="Quality" size="xs" w={150}
@@ -337,7 +347,7 @@ function AudioBranding({ video, analysis, resume }) {
                 ]}
                 value={vQuality} onChange={setVQuality}
               />
-              <Button size="xs" onClick={generate} loading={busy} disabled={visualIdx === null || !brand}>
+              <Button size="xs" onClick={generate} loading={busy} disabled={visualIdx === null || brandSel.length === 0}>
                 {chain ? '+ Add visual ad' : 'Place visual ad'}
               </Button>
             </Group>
@@ -385,21 +395,21 @@ function AudioBranding({ video, analysis, resume }) {
       {mode === 'gap' && (
         <>
           <Group align="flex-end" gap="sm" wrap="wrap">
-            <Select
-              label="Brand" size="xs" w={160} searchable
+            <MultiSelect
+              label="Brand(s)" size="xs" w={240} searchable
               data={brands.map((b) => ({
                 value: b.name,
                 label: b.audience_score !== undefined
                   ? `${b.name} (${b.category}) — fit ${Math.round(b.audience_score * 100)}%`
                   : `${b.name} (${b.category})`,
               }))}
-              value={brand} onChange={setBrand}
+              value={brandSel} onChange={setBrandSel}
             />
             <Select
               label="Ad gap" size="xs" w={200}
               data={gaps} value={gap} onChange={setGap}
             />
-            <Button size="xs" onClick={generate} loading={busy} disabled={!brand || gap === null}>
+            <Button size="xs" onClick={generate} loading={busy} disabled={brandSel.length === 0 || gap === null}>
               {chain ? '+ Add audio ad' : 'Generate audio ad'}
             </Button>
           </Group>
