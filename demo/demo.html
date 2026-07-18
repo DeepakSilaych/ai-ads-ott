@@ -13,6 +13,8 @@
   button:hover, label.btn:hover { border-color:#111; }
   .primary { background:#111; border-color:#111; color:#fff; }
   input[type=file] { display:none; }
+  .ts { width:86px; padding:7px 10px; border:1px solid #ddd; border-radius:8px; font-size:13px; }
+  .ts:focus { outline:none; border-color:#111; }
   .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(400px,1fr)); gap:16px; padding:8px 28px 40px; }
   .card { border:1px solid #eee; border-radius:12px; overflow:hidden; }
   .card.playing { border-color:#111; }
@@ -29,6 +31,8 @@
 <header>
   <h1>Demo Reel</h1>
   <label class="btn">Upload<input type="file" accept="video/*" multiple onchange="add(this.files)"></label>
+  <input class="ts" id="t0" placeholder="from 0:00">
+  <input class="ts" id="t1" placeholder="to end">
   <button class="primary" onclick="playAll()">Play all</button>
   <button onclick="playSeq()">One by one</button>
   <button onclick="stopAll()">Stop</button>
@@ -64,17 +68,36 @@ drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove('over'); add(e.
 document.body.ondragover = (e) => e.preventDefault();
 document.body.ondrop = (e) => { e.preventDefault(); add(e.dataTransfer.files); };
 
-const stopAll = () => vids.forEach(v => { v.onended2 = null; v.pause(); v.currentTime = 0; });
-const playOne = (i) => { vids.forEach((v, j) => j !== i && v.pause()); vids[i].currentTime = 0; vids[i].play(); };
-const playAll = () => vids.forEach(v => { v.currentTime = 0; v.play(); });
+// "1:23" | "83" | "1:02:03" -> seconds (null if empty/invalid)
+function parseTs(id) {
+  const s = document.getElementById(id).value.trim();
+  if (!s) return null;
+  const parts = s.split(':').map(Number);
+  if (parts.some(isNaN)) return null;
+  return parts.reduce((a, b) => a * 60 + b, 0);
+}
+const range = () => ({ from: parseTs('t0') ?? 0, to: parseTs('t1') });
+
+function startClipped(v, { from, to }, onDone) {
+  v.currentTime = from;
+  v.ontimeupdate = to != null ? () => {
+    if (v.currentTime >= to) { v.pause(); v.ontimeupdate = null; onDone && onDone(); }
+  } : null;
+  v.onended = () => { v.ontimeupdate = null; onDone && onDone(); };
+  v.play();
+}
+
+const stopAll = () => vids.forEach(v => { v.onended = v.ontimeupdate = null; v.pause(); v.currentTime = 0; });
+const playOne = (i) => { vids.forEach((v, j) => j !== i && v.pause()); startClipped(vids[i], range()); };
+const playAll = () => { const r = range(); vids.forEach(v => startClipped(v, r)); };
 function playSeq() {
   stopAll();
+  const r = range();
   let i = 0;
   const next = () => {
     if (i >= vids.length) return;
-    vids[i].currentTime = 0; vids[i].play();
     vids[i].scrollIntoView({ behavior:'smooth', block:'center' });
-    vids[i].onended = () => { i++; next(); };
+    startClipped(vids[i], r, () => { i++; next(); });
   };
   next();
 }
