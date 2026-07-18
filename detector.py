@@ -259,6 +259,38 @@ def dialogue_gaps(transcript, duration, min_gap_s=2.0):
     return gaps
 
 
+def build_visual_tracks(visual_slots, max_gap_s=6.0):
+    """Link detections of the same physical surface across frames into
+    tracks. Same surface = fuzzy label match + temporal proximity (bbox IoU
+    is useless under camera motion). Editing a track edits every occurrence."""
+    def same(a, b):
+        a, b = a.lower(), b.lower()
+        return a in b or b in a or a.replace("refrigerator", "fridge") == b.replace("refrigerator", "fridge")
+
+    tracks = []
+    for idx, s in enumerate(sorted(visual_slots, key=lambda x: x["timestamp"])):
+        home = None
+        for t in tracks:
+            if same(t["surface"], s["surface"]) and s["timestamp"] - t["end_ts"] <= max_gap_s:
+                home = t
+                break
+        if home is None:
+            home = {
+                "track_id": len(tracks),
+                "surface": s["surface"],
+                "start_ts": s["timestamp"],
+                "end_ts": s["timestamp"],
+                "score": s["score"],
+                "keyframes": [],
+            }
+            tracks.append(home)
+        home["end_ts"] = s["timestamp"]
+        home["score"] = max(home["score"], s["score"])
+        home["keyframes"].append({"ts": s["timestamp"], "bbox": s["bbox"]})
+        s["track_id"] = home["track_id"]
+    return tracks
+
+
 def detect_audio_slots(video_path, min_gap_s=0.8, silence_db=-30):
     """Find low-energy gaps in the audio track using ffmpeg silencedetect."""
     out = subprocess.run(
@@ -353,8 +385,11 @@ def detect(video_path, video_id, progress_cb=None):
     if transcript:
         audio_slots = dialogue_gaps(transcript, duration) or audio_slots
 
+    visual_tracks = build_visual_tracks(visual_slots)
+
     return {
         "duration": duration,
+        "visual_tracks": visual_tracks,
         "visual_slots": visual_slots,
         "audio_slots": audio_slots,
         "transcript": transcript,

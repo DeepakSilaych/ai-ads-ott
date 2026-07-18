@@ -173,6 +173,90 @@ def splice_video(video_path, out_path, segment_path, seg_start, seg_end):
         capture_output=True, check=True)
 
 
+def track_windows(track, duration=None, pad_s=1.0, sample_s=2.0, merge_gap_s=3.0):
+    """A track's keyframes -> merged contiguous [start, end] edit windows."""
+    windows = []
+    for kf in sorted(track["keyframes"], key=lambda k: k["ts"]):
+        s, e = max(kf["ts"] - pad_s, 0), kf["ts"] + sample_s + pad_s
+        if windows and s - windows[-1][1] <= merge_gap_s:
+            windows[-1][1] = e
+        else:
+            windows.append([s, e])
+    if duration:
+        windows = [[s, min(e, duration)] for s, e in windows]
+    return windows
+
+
+def run_track(filename, track, brand_name, chain=False, duration=None):
+    """Edit EVERY occurrence of a tracked surface in ONE Aleph call:
+    cut all the track's windows, concat into a single video, edit it,
+    split at the known boundaries, splice each piece back."""
+    os.makedirs(EDITED_DIR, exist_ok=True)
+    os.makedirs(WORK_DIR, exist_ok=True)
+    video_path = os.path.join(BASE_DIR, "static", "uploads", "original", filename)
+    out_path = os.path.join(EDITED_DIR, filename)
+    if chain and os.path.exists(out_path):
+        prev = out_path + ".prev.mp4"
+        os.replace(out_path, prev)
+        video_path = prev
+
+    windows = track_windows(track, duration)
+
+    # cut each window at a fixed fps so concat boundaries stay frame-exact
+    pieces = []
+    for i, (s, e) in enumerate(windows):
+        p = os.path.join(WORK_DIR, f"w{i}.mp4")
+        subprocess.run(
+            ["ffmpeg", "-y", "-ss", f"{s:.3f}", "-to", f"{e:.3f}", "-i", video_path,
+             "-c:v", "libx264", "-crf", "18", "-r", "24", "-an", p],
+            capture_output=True, check=True)
+        pieces.append(p)
+
+    if len(pieces) == 1:
+        combined = pieces[0]
+    else:
+        inputs = []
+        for p in pieces:
+            inputs += ["-i", p]
+        n = len(pieces)
+        fc = "".join(f"[{i}:v]" for i in range(n)) + f"concat=n={n}:v=1:a=0[out]"
+        combined = os.path.join(WORK_DIR, "combined.mp4")
+        subprocess.run(
+            ["ffmpeg", "-y", *inputs, "-filter_complex", fc, "-map", "[out]",
+             "-c:v", "libx264", "-crf", "18", combined],
+            capture_output=True, check=True)
+
+    prompt = build_prompt(track, brand_name) + (
+        " The video contains several cuts of the same location; apply the SAME"
+        " replacement consistently in every shot." if len(pieces) > 1 else "")
+    edited = edit_segment(combined, prompt)
+
+    # split the edited video back at the window boundaries and splice each in
+    src = video_path
+    offset = 0.0
+    for i, (s, e) in enumerate(windows):
+        span = e - s
+        part = os.path.join(WORK_DIR, f"edited_w{i}.mp4")
+        subprocess.run(
+            ["ffmpeg", "-y", "-ss", f"{offset:.3f}", "-to", f"{offset + span:.3f}",
+             "-i", edited, "-c:v", "libx264", "-crf", "18", part],
+            capture_output=True, check=True)
+        step_out = out_path if i == len(windows) - 1 else os.path.join(WORK_DIR, f"step{i}.mp4")
+        splice_video(src, step_out, part, s, e)
+        src = step_out
+        offset += span
+
+    return {
+        "type": "visual",
+        "brand": brand_name,
+        "surface": track.get("surface"),
+        "windows": [[round(s, 2), round(e, 2)] for s, e in windows],
+        "prompt": prompt,
+        "engine": "runway-aleph2",
+        "output": out_path,
+    }
+
+
 def run(filename, slot, visual_slots, brand_name, chain=False, pad_s=1.0):
     """Full stage-2 pass for one placement."""
     os.makedirs(EDITED_DIR, exist_ok=True)

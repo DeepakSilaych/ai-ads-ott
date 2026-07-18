@@ -249,15 +249,26 @@ def place_visual():
         video_id = _video_id(data['filename'])
         with open(_result_path(video_id)) as f:
             analysis = json.load(f)
-        slot = analysis['visual_slots'][int(data['slot_index'])]
         chain, session_id = _session_setup(data)
-        result = visual_placer.run(
-            filename=data['filename'],
-            slot=slot,
-            visual_slots=analysis['visual_slots'],
-            brand_name=data['brand'],
-            chain=chain,
-        )
+        tracks = analysis.get('visual_tracks') or []
+        track = None
+        if data.get('track_id') is not None:
+            track = tracks[int(data['track_id'])]
+        elif tracks:
+            slot = analysis['visual_slots'][int(data['slot_index'])]
+            tid = slot.get('track_id')
+            track = tracks[tid] if tid is not None else None
+        if track:
+            result = visual_placer.run_track(
+                filename=data['filename'], track=track,
+                brand_name=data['brand'], chain=chain,
+                duration=analysis.get('duration'))
+        else:
+            slot = analysis['visual_slots'][int(data['slot_index'])]
+            result = visual_placer.run(
+                filename=data['filename'], slot=slot,
+                visual_slots=analysis['visual_slots'],
+                brand_name=data['brand'], chain=chain)
         result['output'] = '/' + os.path.relpath(result['output'], os.path.dirname(__file__))
         result['session_id'] = _record_edit('visual', data['filename'], result, chain, session_id)
         return jsonify(result)
@@ -277,4 +288,6 @@ def detection_status(video_id):
 
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5050)
+    # reloader off: code edits during long-running placement requests were
+    # killing in-flight jobs; restart manually after backend changes
+    app.run(debug=True, use_reloader=False, port=5050)
