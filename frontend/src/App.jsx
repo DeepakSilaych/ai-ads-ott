@@ -118,6 +118,7 @@ function VideoDetail({ video, resume }) {
 function AudioBranding({ video, analysis, resume }) {
   const [mode, setMode] = useState('visual')
   const [visualIdx, setVisualIdx] = useState(null)
+  const [vQuality, setVQuality] = useState('draft')
   const [brands, setBrands] = useState([])
   const [brand, setBrand] = useState(null)
   const [gap, setGap] = useState(null)
@@ -158,6 +159,7 @@ function AudioBranding({ video, analysis, resume }) {
           filename: video.filename,
           slot_index: +visualIdx,
           brand,
+          quality: vQuality,
           chain,
           session_id: sessionId,
         }),
@@ -253,6 +255,14 @@ function AudioBranding({ video, analysis, resume }) {
                 label="Brand" size="xs" w={160} searchable
                 data={brands.map((b) => ({ value: b.name, label: b.name }))}
                 value={brand} onChange={setBrand}
+              />
+              <Select
+                label="Quality" size="xs" w={150}
+                data={[
+                  { value: 'draft', label: 'Draft (fast, cheap)' },
+                  { value: 'final', label: 'Final (Aleph)' },
+                ]}
+                value={vQuality} onChange={setVQuality}
               />
               <Button size="xs" onClick={generate} loading={busy} disabled={visualIdx === null || !brand}>
                 {chain ? '+ Add visual ad' : 'Place visual ad'}
