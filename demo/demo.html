@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Ad Integration — Demo Reel</title>
+<style>
+  :root { --bg:#111; --s:#1a1a1a; --b:#2a2a2a; --t:#ddd; --d:#888; --a:#4a8fe7; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--t); font-family:-apple-system,system-ui,sans-serif; }
+  header { display:flex; align-items:center; justify-content:space-between;
+           padding:14px 24px; border-bottom:1px solid var(--b); position:sticky; top:0; background:var(--bg); z-index:5; }
+  h1 { font-size:16px; font-weight:650; }
+  .controls { display:flex; gap:8px; }
+  button { padding:7px 16px; border-radius:6px; border:1px solid var(--b); background:var(--s);
+           color:var(--t); font-size:13px; font-weight:500; cursor:pointer; }
+  button:hover { border-color:var(--a); }
+  button.primary { background:var(--a); border-color:var(--a); color:#fff; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(420px,1fr)); gap:18px; padding:20px 24px; }
+  .card { background:var(--s); border:1px solid var(--b); border-radius:10px; overflow:hidden; }
+  .card.playing { border-color:var(--a); box-shadow:0 0 0 1px var(--a); }
+  .card video { width:100%; aspect-ratio:16/9; background:#000; display:block; }
+  .card .row { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; }
+  .card .name { font-size:13px; font-weight:600; }
+  .card .sub { font-size:11px; color:var(--d); margin-top:2px; }
+  .empty { padding:60px; text-align:center; color:var(--d); font-size:14px; line-height:1.7; }
+  code { background:#222; padding:1px 6px; border-radius:4px; font-size:12px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Ad Integration — Demo Reel</h1>
+  <div class="controls">
+    <button class="primary" onclick="playAll()">&#9654; Play all together</button>
+    <button onclick="playSequential()">Play one by one</button>
+    <button onclick="stopAll()">&#9632; Stop</button>
+    <button onclick="muteAll()" id="muteBtn">Mute all</button>
+  </div>
+</header>
+
+<div class="grid" id="grid"></div>
+<div class="empty" id="empty" style="display:none">
+  No videos configured yet.<br>
+  Edit the <code>VIDEOS</code> list at the top of this file — each entry:
+  <code>{ src: "videos/clip.mp4", title: "Original vs Eggo", note: "visual placement" }</code><br>
+  Relative paths resolve next to this HTML file.
+</div>
+
+<script>
+/* ================= EDIT THIS LIST ================= */
+const VIDEOS = [
+  // { src: "videos/original.mp4",      title: "Original clip",            note: "untouched" },
+  // { src: "videos/eggo_header.mp4",   title: "Eggo — header sign",       note: "visual, keyframe-anchored" },
+  // { src: "videos/dialogue_swap.mp4", title: "Dialogue swap",            note: "cloned voice, seed audio" },
+  // { src: "videos/pa_spot.mp4",       title: "PA gap spot",              note: "smallest.ai announcer" },
+];
+/* ================================================== */
+
+const grid = document.getElementById('grid');
+let muted = false;
+let seqTimer = null;
+
+function render() {
+  if (!VIDEOS.length) {
+    document.getElementById('empty').style.display = 'block';
+    return;
+  }
+  grid.innerHTML = VIDEOS.map((v, i) => `
+    <div class="card" id="card-${i}">
+      <video id="v-${i}" src="${v.src}" controls preload="metadata"></video>
+      <div class="row">
+        <div>
+          <div class="name">${v.title || v.src.split('/').pop()}</div>
+          ${v.note ? `<div class="sub">${v.note}</div>` : ''}
+        </div>
+        <button onclick="playOne(${i})">&#9654; Play</button>
+      </div>
+    </div>`).join('');
+  VIDEOS.forEach((_, i) => {
+    const el = vid(i);
+    el.addEventListener('play',  () => card(i).classList.add('playing'));
+    el.addEventListener('pause', () => card(i).classList.remove('playing'));
+    el.addEventListener('ended', () => card(i).classList.remove('playing'));
+  });
+}
+
+const vid  = (i) => document.getElementById('v-' + i);
+const card = (i) => document.getElementById('card-' + i);
+
+function stopAll() {
+  clearSequence();
+  VIDEOS.forEach((_, i) => { const el = vid(i); el.pause(); el.currentTime = 0; });
+}
+
+function playOne(i) {
+  clearSequence();
+  VIDEOS.forEach((_, j) => { if (j !== i) vid(j).pause(); });
+  const el = vid(i);
+  el.currentTime = 0;
+  el.play();
+  card(i).scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function playAll() {
+  clearSequence();
+  VIDEOS.forEach((_, i) => { const el = vid(i); el.currentTime = 0; el.play(); });
+}
+
+function playSequential() {
+  stopAll();
+  let i = 0;
+  const next = () => {
+    if (i >= VIDEOS.length) return;
+    const el = vid(i);
+    card(i).scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.currentTime = 0;
+    el.play();
+    el.onended = () => { i += 1; next(); };
+  };
+  next();
+}
+
+function clearSequence() {
+  VIDEOS.forEach((_, i) => { vid(i).onended = null; });
+}
+
+function muteAll() {
+  muted = !muted;
+  VIDEOS.forEach((_, i) => { vid(i).muted = muted; });
+  document.getElementById('muteBtn').textContent = muted ? 'Unmute all' : 'Mute all';
+}
+
+render();
+</script>
+</body>
+</html>
