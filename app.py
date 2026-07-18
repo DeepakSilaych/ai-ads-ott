@@ -87,57 +87,69 @@ def start_detection():
     return jsonify({'video_id': video_id, 'status': 'running'})
 
 
-RUNS_DIR = os.path.join(os.path.dirname(__file__), 'static', 'uploads', 'runs')
-RUNS_INDEX = os.path.join(RUNS_DIR, 'runs.json')
+SESSIONS_DIR = os.path.join(os.path.dirname(__file__), 'static', 'uploads', 'sessions')
+SESSIONS_INDEX = os.path.join(SESSIONS_DIR, 'sessions.json')
 
 
-def _load_runs():
-    if os.path.exists(RUNS_INDEX):
-        with open(RUNS_INDEX) as f:
+def _load_sessions():
+    if os.path.exists(SESSIONS_INDEX):
+        with open(SESSIONS_INDEX) as f:
             return json.load(f)
     return []
 
 
-def _record_run(kind, filename, result):
-    """Archive the run's output video + metadata; kept until manually deleted."""
+def _save_sessions(sessions):
+    os.makedirs(SESSIONS_DIR, exist_ok=True)
+    with open(SESSIONS_INDEX, 'w') as f:
+        json.dump(sessions, f, indent=1)
+
+
+def _record_edit(kind, filename, result, chain):
+    """Sessions = one stack of chained edits on a video, archived as a unit.
+    chain appends to the video's open session; unchained starts a new one."""
     import shutil
     import time
     import uuid
-    os.makedirs(RUNS_DIR, exist_ok=True)
-    run_id = uuid.uuid4().hex[:10]
+    os.makedirs(SESSIONS_DIR, exist_ok=True)
+    sessions = _load_sessions()
+    now = time.strftime('%Y-%m-%d %H:%M:%S')
+    edit = {'kind': kind, 'at': now,
+            'detail': {k: v for k, v in result.items() if k != 'output'}}
+
+    session = sessions[0] if (chain and sessions and sessions[0]['filename'] == filename) else None
+    if session is None:
+        session = {
+            'id': uuid.uuid4().hex[:10],
+            'filename': filename,
+            'created_at': now,
+            'edits': [],
+        }
+        session['video'] = f"/static/uploads/sessions/{session['id']}.mp4"
+        sessions.insert(0, session)
+
+    session['edits'].append(edit)
+    session['updated_at'] = now
     src = os.path.join(os.path.dirname(__file__), result['output'].lstrip('/'))
-    archived = f'{run_id}.mp4'
-    shutil.copyfile(src, os.path.join(RUNS_DIR, archived))
-    runs = _load_runs()
-    runs.insert(0, {
-        'id': run_id,
-        'kind': kind,
-        'filename': filename,
-        'created_at': time.strftime('%Y-%m-%d %H:%M:%S'),
-        'video': f'/static/uploads/runs/{archived}',
-        'detail': {k: v for k, v in result.items() if k != 'output'},
-    })
-    with open(RUNS_INDEX, 'w') as f:
-        json.dump(runs, f, indent=1)
-    return run_id
+    shutil.copyfile(src, os.path.join(SESSIONS_DIR, f"{session['id']}.mp4"))
+    _save_sessions(sessions)
+    return session['id']
 
 
-@app.route('/api/runs')
-def list_runs():
-    return jsonify(_load_runs())
+@app.route('/api/sessions')
+def list_sessions():
+    return jsonify(_load_sessions())
 
 
-@app.route('/api/runs/<run_id>', methods=['DELETE'])
-def delete_run(run_id):
-    runs = _load_runs()
-    keep = [r for r in runs if r['id'] != run_id]
-    if len(keep) == len(runs):
+@app.route('/api/sessions/<session_id>', methods=['DELETE'])
+def delete_session(session_id):
+    sessions = _load_sessions()
+    keep = [s for s in sessions if s['id'] != session_id]
+    if len(keep) == len(sessions):
         return jsonify({'error': 'not found'}), 404
-    path = os.path.join(RUNS_DIR, f'{run_id}.mp4')
+    path = os.path.join(SESSIONS_DIR, f'{session_id}.mp4')
     if os.path.exists(path):
         os.remove(path)
-    with open(RUNS_INDEX, 'w') as f:
-        json.dump(keep, f, indent=1)
+    _save_sessions(keep)
     return jsonify({'ok': True})
 
 
@@ -162,7 +174,7 @@ def place_audio():
         )
         result['tts_audio'] = '/' + os.path.relpath(result['tts_audio'], os.path.dirname(__file__))
         result['output'] = '/' + os.path.relpath(result['output'], os.path.dirname(__file__))
-        result['run_id'] = _record_run('gap_spot', data['filename'], result)
+        result['session_id'] = _record_edit('gap_spot', data['filename'], result, bool(data.get('chain')))
         return jsonify(result)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -194,7 +206,7 @@ def place_dialogue():
                 filename=data['filename'], swap=swap,
                 transcript=analysis['transcript'], chain=bool(data.get('chain')))
         result['output'] = '/' + os.path.relpath(result['output'], os.path.dirname(__file__))
-        result['run_id'] = _record_run('dialogue_swap', data['filename'], result)
+        result['session_id'] = _record_edit('dialogue_swap', data['filename'], result, bool(data.get('chain')))
         return jsonify(result)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -217,7 +229,7 @@ def place_visual():
             chain=bool(data.get('chain')),
         )
         result['output'] = '/' + os.path.relpath(result['output'], os.path.dirname(__file__))
-        result['run_id'] = _record_run('visual', data['filename'], result)
+        result['session_id'] = _record_edit('visual', data['filename'], result, bool(data.get('chain')))
         return jsonify(result)
     except Exception as e:
         return jsonify({'error': str(e)}), 500

@@ -27,7 +27,7 @@ export default function App() {
         </Group>
         <SegmentedControl
           fullWidth size="xs" mb="sm" value={view} onChange={setView}
-          data={[{ value: 'videos', label: 'Videos' }, { value: 'runs', label: 'Runs' }]}
+          data={[{ value: 'videos', label: 'Videos' }, { value: 'sessions', label: 'Sessions' }]}
         />
         <ScrollArea>
           <Stack gap="xs">
@@ -55,8 +55,8 @@ export default function App() {
       </AppShell.Navbar>
 
       <AppShell.Main>
-        {view === 'runs'
-          ? <RunsDashboard />
+        {view === 'sessions'
+          ? <SessionsDashboard />
           : selected
             ? <VideoDetail video={selected} key={selected.video_id} />
             : <Text c="dimmed" ta="center" mt="30vh">Select a video</Text>}
@@ -307,47 +307,59 @@ const KIND_META = {
   gap_spot: { color: 'indigo', label: 'gap spot' },
 }
 
-function RunsDashboard() {
-  const [runs, setRuns] = useState(null)
+function SessionsDashboard() {
+  const [sessions, setSessions] = useState(null)
 
-  const load = () => api('/api/runs').then(setRuns)
+  const load = () => api('/api/sessions').then(setSessions)
   useEffect(() => { load() }, [])
 
   const remove = async (id) => {
-    await fetch(`/api/runs/${id}`, { method: 'DELETE' })
+    await fetch(`/api/sessions/${id}`, { method: 'DELETE' })
     load()
   }
 
-  if (!runs) return <Loader size="sm" mt="xl" mx="auto" />
-  if (runs.length === 0) return <Text c="dimmed" ta="center" mt="30vh">No runs yet — every placement you generate is archived here.</Text>
+  if (!sessions) return <Loader size="sm" mt="xl" mx="auto" />
+  if (sessions.length === 0) {
+    return <Text c="dimmed" ta="center" mt="30vh">No sessions yet — each stack of ad edits you build is archived here.</Text>
+  }
 
   return (
     <Stack gap="md">
-      <Title order={5}>Run history ({runs.length})</Title>
-      {runs.map((r) => {
-        const meta = KIND_META[r.kind] || { color: 'gray', label: r.kind }
-        const d = r.detail || {}
-        return (
-          <Paper key={r.id} p="md" radius="md" withBorder>
-            <Group justify="space-between" mb={6}>
-              <Group gap={8}>
-                <Badge size="sm" color={meta.color} variant="light">{meta.label}</Badge>
-                {d.brand && <Badge size="sm" variant="outline">{d.brand}</Badge>}
-                {d.engine && <Badge size="sm" color="gray" variant="light">{d.engine}</Badge>}
-                <Text size="xs" c="dimmed">{r.created_at}</Text>
-              </Group>
-              <Button size="compact-xs" variant="subtle" color="red" onClick={() => remove(r.id)}>
-                Delete
-              </Button>
+      <Title order={5}>Ad integration sessions ({sessions.length})</Title>
+      {sessions.map((s) => (
+        <Paper key={s.id} p="md" radius="md" withBorder>
+          <Group justify="space-between" mb={6}>
+            <Group gap={8}>
+              <Badge size="sm" color="teal" variant="light">
+                {s.edits.length} edit{s.edits.length > 1 ? 's' : ''}
+              </Badge>
+              <Text size="xs" ff="monospace" c="dimmed" lineClamp={1} maw={280}>{s.filename}</Text>
+              <Text size="xs" c="dimmed">{s.updated_at || s.created_at}</Text>
             </Group>
-            <Text size="xs" c="dimmed" mb={8} lineClamp={2}>
-              {d.script || d.line_after || d.prompt || r.filename}
-            </Text>
-            <video src={r.video} controls preload="metadata"
-                   style={{ width: '55%', borderRadius: 8, background: '#000' }} />
-          </Paper>
-        )
-      })}
+            <Button size="compact-xs" variant="subtle" color="red" onClick={() => remove(s.id)}>
+              Delete
+            </Button>
+          </Group>
+          <Stack gap={4} mb={8}>
+            {s.edits.map((e, i) => {
+              const meta = KIND_META[e.kind] || { color: 'gray', label: e.kind }
+              const d = e.detail || {}
+              return (
+                <Group key={i} gap={8}>
+                  <Badge size="xs" variant="outline" color="gray">#{i + 1}</Badge>
+                  <Badge size="xs" color={meta.color} variant="light">{meta.label}</Badge>
+                  {d.brand && <Badge size="xs" variant="outline">{d.brand}</Badge>}
+                  <Text size="xs" c="dimmed" lineClamp={1} style={{ flex: 1 }}>
+                    {d.script || d.line_after || d.prompt || ''}
+                  </Text>
+                </Group>
+              )
+            })}
+          </Stack>
+          <video src={`${s.video}?v=${s.updated_at}`} controls preload="metadata"
+                 style={{ width: '55%', borderRadius: 8, background: '#000' }} />
+        </Paper>
+      ))}
     </Stack>
   )
 }

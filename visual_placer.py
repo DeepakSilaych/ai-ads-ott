@@ -86,29 +86,26 @@ def _iou(a, b):
     return inter / ua if ua else 0
 
 
-def visibility_window(visual_slots, anchor):
-    """Link same-surface detections across analyzed frames; return the
-    (start_ts, end_ts) window in which the anchor surface stays visible."""
-    by_ts = {}
-    for s in visual_slots:
-        by_ts.setdefault(s["timestamp"], []).append(s)
-    timestamps = sorted(by_ts)
+def visibility_window(visual_slots, anchor, max_gap_s=2.5):
+    """Return the (start_ts, end_ts) window in which the anchor surface stays
+    visible. Linked by surface LABEL across temporally adjacent sampled
+    frames — bbox IoU is useless under camera pans (boxes shift entirely
+    between the 2s samples)."""
+    def same(a, b):
+        a, b = a.lower(), b.lower()
+        return a in b or b in a
 
+    times = sorted({s["timestamp"] for s in visual_slots
+                    if same(s["surface"], anchor["surface"])})
     lo = hi = anchor["timestamp"]
-    for direction in (-1, 1):
-        cur = anchor["bbox"]
-        i = timestamps.index(anchor["timestamp"]) + direction
-        while 0 <= i < len(timestamps):
-            best = max(((s, _iou(cur, s["bbox"])) for s in by_ts[timestamps[i]]),
-                       key=lambda x: x[1], default=None)
-            if not best or best[1] < 0.3:
-                break
-            if direction < 0:
-                lo = timestamps[i]
-            else:
-                hi = timestamps[i]
-            cur = best[0]["bbox"]
-            i += direction
+    for t in reversed([t for t in times if t < anchor["timestamp"]]):
+        if lo - t > max_gap_s:
+            break
+        lo = t
+    for t in [t for t in times if t > anchor["timestamp"]]:
+        if t - hi > max_gap_s:
+            break
+        hi = t
     return lo, hi
 
 
