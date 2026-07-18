@@ -1,0 +1,8 @@
+.env
+.DS_Store
+__pycache__/
+env/
+static/uploads/
+frontend/node_modules/
+frontend/dist/
+*.prev.mp4

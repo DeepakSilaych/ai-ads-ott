@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ad Insertion Tool</title>
+  <style>
+    :root { --bg: #111; --s: #1a1a1a; --b: #252525; --t: #ccc; --d: #666; --a: #4a8fe7; --r: 4px; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, system-ui, sans-serif; background: var(--bg); color: var(--t); font-size: 13px; }
+
+    nav { background: var(--s); border-bottom: 1px solid var(--b); padding: 0 20px; height: 44px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 10; }
+    nav h1 { font-size: 13px; font-weight: 600; letter-spacing: -0.2px; }
+
+    .wrap { max-width: 1000px; margin: 0 auto; padding: 20px; }
+
+    .upload { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+    .upload input[type="file"] { font-size: 12px; }
+    .upload span { color: var(--d); font-size: 12px; }
+
+    .btn { padding: 5px 12px; border-radius: var(--r); border: 1px solid var(--b); background: var(--s); color: var(--t); font-size: 12px; cursor: pointer; }
+    .btn:hover { border-color: #444; }
+    .btn-a { background: var(--a); border-color: var(--a); color: #fff; }
+
+    .list { display: flex; flex-direction: column; gap: 1px; background: var(--b); border: 1px solid var(--b); border-radius: var(--r); overflow: hidden; }
+
+    .row { background: var(--s); }
+    .row-head { padding: 8px 14px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; }
+    .row-head:hover { background: #1e1e1e; }
+    .row-head .fname { font-family: 'SF Mono', monospace; font-size: 12px; }
+    .tag { font-size: 10px; padding: 1px 6px; border-radius: 3px; font-weight: 600; }
+    .tag.p { background: #2a2000; color: #b08800; }
+    .tag.d { background: #002a0a; color: #2a9d3a; }
+
+    .row-body { display: none; padding: 14px; border-top: 1px solid var(--b); }
+    .row-body.open { display: block; }
+
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .grid2 label { display: block; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--d); margin-bottom: 6px; }
+    .grid2 video { width: 100%; border-radius: 3px; background: #000; }
+    .ph { width: 100%; aspect-ratio: 16/9; background: #0e0e0e; border-radius: 3px; display: flex; align-items: center; justify-content: center; color: #444; font-size: 11px; }
+
+    .actions { margin-top: 10px; display: flex; gap: 6px; }
+
+    .empty { text-align: center; padding: 48px; color: var(--d); font-size: 12px; }
+
+    /* detection results */
+    .results { margin-top: 14px; border-top: 1px solid var(--b); padding-top: 12px; }
+    .results h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--d); margin-bottom: 8px; }
+    .slot { display: flex; gap: 12px; padding: 8px; background: #161616; border: 1px solid var(--b); border-radius: 3px; margin-bottom: 6px; align-items: flex-start; }
+    .slot .thumb { position: relative; flex-shrink: 0; width: 160px; }
+    .slot .thumb img { width: 100%; border-radius: 2px; display: block; }
+    .slot .thumb .bbox { position: absolute; border: 1.5px solid #e74c3c; background: rgba(231,76,60,0.12); }
+    .slot .info { font-size: 12px; line-height: 1.5; }
+    .slot .info .t { color: var(--a); font-family: monospace; font-size: 11px; }
+    .slot .info .surface { font-weight: 600; }
+    .slot .info .reason { color: var(--d); }
+    .score { display: inline-block; font-size: 10px; font-weight: 700; padding: 0 5px; border-radius: 2px; background: #223; color: var(--a); }
+    .audio-slot { display: flex; gap: 16px; font-size: 12px; font-family: monospace; padding: 5px 10px; background: #161616; border: 1px solid var(--b); border-radius: 3px; margin-bottom: 4px; }
+    .prog { font-size: 11px; color: var(--a); font-family: monospace; }
+  </style>
+</head>
+<body>
+
+<nav>
+  <h1>Ad Insertion</h1>
+  <button class="btn" onclick="load()">Refresh</button>
+</nav>
+
+<div class="wrap">
+  <div class="upload">
+    <input type="file" id="fi" accept="video/*">
+    <button class="btn btn-a" onclick="up()">Upload</button>
+    <span id="us"></span>
+  </div>
+
+  <div id="list"></div>
+</div>
+
+<script>
+async function up() {
+  const f = document.getElementById('fi');
+  const s = document.getElementById('us');
+  if (!f.files[0]) return;
+  s.textContent = 'uploading...';
+  const fd = new FormData();
+  fd.append('video', f.files[0]);
+  try {
+    const r = await fetch('/api/upload', { method: 'POST', body: fd });
+    s.textContent = r.ok ? '' : 'failed';
+    if (r.ok) { f.value = ''; load(); }
+  } catch { s.textContent = 'error'; }
+}
+
+async function load() {
+  const el = document.getElementById('list');
+  try {
+    const r = await fetch('/api/videos');
+    const vs = await r.json();
+    if (!vs.length) { el.innerHTML = '<div class="empty">No videos uploaded</div>'; return; }
+    el.innerHTML = '<div class="list">' + vs.map((v, i) => `
+      <div class="row">
+        <div class="row-head" onclick="document.getElementById('b${i}').classList.toggle('open')">
+          <span class="fname">${v.filename}</span>
+          <span class="tag ${v.edited ? 'd' : 'p'}">${v.edited ? 'done' : 'pending'}</span>
+        </div>
+        <div class="row-body" id="b${i}">
+          <div class="grid2">
+            <div><label>Original</label><video src="${v.original}" controls preload="metadata"></video></div>
+            <div><label>Result</label>${v.edited ? `<video src="${v.edited}" controls preload="metadata"></video>` : '<div class="ph">--</div>'}</div>
+          </div>
+          <div class="actions">
+            <button class="btn btn-a" onclick="detect('${v.filename.replace(/'/g, "\\'")}', '${v.video_id}')">${v.analyzed ? 'Re-detect' : 'Detect placements'}</button>
+            <span class="prog" id="prog-${v.video_id}"></span>
+          </div>
+          <div class="results" id="res-${v.video_id}" style="display:none"></div>
+        </div>
+      </div>
+    `).join('') + '</div>';
+
+    for (const v of vs) {
+      if (v.analyzed) showResults(v.video_id);
+    }
+  } catch { el.innerHTML = '<div class="empty">Failed to load</div>'; }
+}
+
+async function detect(filename, vid) {
+  await fetch('/api/detect', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filename }),
+  });
+  poll(vid);
+}
+
+function poll(vid) {
+  const prog = document.getElementById('prog-' + vid);
+  const iv = setInterval(async () => {
+    const r = await fetch('/api/detect/' + vid);
+    const j = await r.json();
+    if (j.status === 'running') {
+      prog.textContent = j.progress || 'running...';
+    } else {
+      clearInterval(iv);
+      prog.textContent = j.status === 'error' ? 'error: ' + j.error : '';
+      if (j.status === 'done') showResults(vid);
+    }
+  }, 1500);
+}
+
+async function showResults(vid) {
+  const r = await fetch('/api/detect/' + vid);
+  const j = await r.json();
+  if (j.status !== 'done') return;
+  const res = j.result;
+  const el = document.getElementById('res-' + vid);
+  el.style.display = 'block';
+
+  const visual = (res.visual_slots || []).filter(s => s.score >= 5).sort((a, b) => b.score - a.score);
+  const audio = res.audio_slots || [];
+
+  el.innerHTML =
+    `<h3>Visual placements (${visual.length})</h3>` +
+    (visual.length ? visual.map(s => {
+      const [x1, y1, x2, y2] = s.bbox;
+      return `<div class="slot">
+        <div class="thumb">
+          <img src="${s.frame}">
+          <div class="bbox" style="left:${x1/10}%;top:${y1/10}%;width:${(x2-x1)/10}%;height:${(y2-y1)/10}%"></div>
+        </div>
+        <div class="info">
+          <span class="t">t=${s.timestamp}s</span> <span class="score">${s.score}/10</span><br>
+          <span class="surface">${s.surface}</span><br>
+          <span class="reason">${s.reason}</span>
+        </div>
+      </div>`;
+    }).join('') : '<div class="empty" style="padding:12px">none found</div>') +
+    `<h3 style="margin-top:12px">Audio gaps (${audio.length})</h3>` +
+    (audio.length ? audio.map(s =>
+      `<div class="audio-slot"><span>${s.start_ts}s → ${s.end_ts}s</span><span>${s.duration}s gap</span></div>`
+    ).join('') : '<div class="empty" style="padding:12px">none found</div>');
+}
+
+load();
+</script>
+</body>
+</html>

@@ -1,0 +1,30 @@
+{
+  "category": "beverages",
+  "display": "Beverages",
+  "brands": [
+    {
+      "name": "Coca-Cola",
+      "spoken_name": "Coke",
+      "products": ["soda", "soft drinks"],
+      "generic_terms": ["soda", "drink", "something to drink", "cold drink"],
+      "tagline": "Taste the feeling",
+      "scene_fit": ["diner", "party", "beach", "movie night", "grocery store"]
+    },
+    {
+      "name": "Red Bull",
+      "spoken_name": "Red Bull",
+      "products": ["energy drinks"],
+      "generic_terms": ["energy drink", "caffeine", "stay awake"],
+      "tagline": "Gives you wings",
+      "scene_fit": ["studying", "gaming", "sports", "late night", "driving"]
+    },
+    {
+      "name": "Starbucks",
+      "spoken_name": "Starbucks",
+      "products": ["coffee"],
+      "generic_terms": ["coffee", "latte", "grab a coffee", "cafe"],
+      "tagline": "",
+      "scene_fit": ["morning", "office", "city street", "meeting", "date"]
+    }
+  ]
+}

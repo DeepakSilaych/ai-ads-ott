@@ -1,0 +1,38 @@
+{
+  "category": "food_snacks",
+  "display": "Food & Snacks",
+  "brands": [
+    {
+      "name": "Eggo",
+      "spoken_name": "Eggo",
+      "products": ["frozen waffles"],
+      "generic_terms": ["waffles", "breakfast", "frozen food"],
+      "tagline": "L'Eggo my Eggo",
+      "scene_fit": ["kitchen", "breakfast", "grocery store", "freezer aisle", "kids"]
+    },
+    {
+      "name": "McDonald's",
+      "spoken_name": "McDonald's",
+      "products": ["burgers", "fries", "fast food"],
+      "generic_terms": ["burger", "fries", "fast food", "drive-through", "grab a bite"],
+      "tagline": "I'm lovin' it",
+      "scene_fit": ["road trip", "city street", "late night", "friends hanging out"]
+    },
+    {
+      "name": "Lay's",
+      "spoken_name": "Lays",
+      "products": ["potato chips"],
+      "generic_terms": ["chips", "snacks", "crisps"],
+      "tagline": "Betcha can't eat just one",
+      "scene_fit": ["party", "couch", "movie night", "grocery store"]
+    },
+    {
+      "name": "Domino's",
+      "spoken_name": "Dominos",
+      "products": ["pizza delivery"],
+      "generic_terms": ["pizza", "order food", "delivery"],
+      "tagline": "Oh yes we did",
+      "scene_fit": ["party", "late night", "office", "friends hanging out"]
+    }
+  ]
+}

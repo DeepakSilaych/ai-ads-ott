@@ -1,0 +1,30 @@
+{
+  "category": "tech_lifestyle",
+  "display": "Tech & Lifestyle",
+  "brands": [
+    {
+      "name": "Apple",
+      "spoken_name": "iPhone",
+      "products": ["smartphones", "laptops", "earbuds"],
+      "generic_terms": ["phone", "call me", "text me", "laptop", "earbuds"],
+      "tagline": "",
+      "scene_fit": ["office", "home", "city street", "any modern scene"]
+    },
+    {
+      "name": "Nike",
+      "spoken_name": "Nikes",
+      "products": ["sneakers", "sportswear"],
+      "generic_terms": ["shoes", "sneakers", "running", "workout"],
+      "tagline": "Just do it",
+      "scene_fit": ["sports", "gym", "street", "school", "running"]
+    },
+    {
+      "name": "Uber",
+      "spoken_name": "Uber",
+      "products": ["rideshare"],
+      "generic_terms": ["ride", "taxi", "cab", "get a ride", "pick us up"],
+      "tagline": "",
+      "scene_fit": ["city street", "night out", "airport", "leaving a place"]
+    }
+  ]
+}

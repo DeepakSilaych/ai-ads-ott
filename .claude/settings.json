@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Hook input: $ARGUMENTS\n\nCheck this rule for the ai-ads-ott project: all LLM prompt text (multi-line instruction strings sent to a language model) must live in prompts.py, not inline in other files.\n\nIf the edited file is prompts.py, or is not a .py file, or the change does not add an inline LLM prompt string, respond ok=true.\nIf the change adds a hardcoded LLM prompt string to a .py file other than prompts.py, respond ok=false with reason: 'LLM prompts must be defined in prompts.py and imported — move this prompt there.'",
+            "continueOnBlock": true,
+            "statusMessage": "Checking prompts live in prompts.py"
+          }
+        ]
+      }
+    ]
+  }
+}
