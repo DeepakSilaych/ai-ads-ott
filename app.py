@@ -528,11 +528,18 @@ def place_visual():
                     json.dump(analysis, f)
             quality = data.get('quality', 'final')
             model = 'gemini_omni_flash' if quality == 'draft' else 'aleph2'
+            # scope indexed windows to THIS track's own time range — the
+            # index matches the surface anywhere in the video (same-named
+            # surfaces elsewhere must not inflate the edit)
+            lo, hi = track['start_ts'] - 2.5, track['end_ts'] + 3.5
+            scoped = [list(w) for w in track['indexed']['windows']
+                      if w[1] > lo and w[0] < hi]
+            scoped = [[max(w[0], lo), min(w[1], hi)] for w in scoped]
             result = visual_placer.run_track(
                 filename=data['filename'], track=track,
                 brand_name=data['brand'], chain=chain,
                 duration=analysis.get('duration'),
-                windows=[list(w) for w in (data.get('windows') or track['indexed']['windows'])] or None,
+                windows=[list(w) for w in (data.get('windows') or scoped)] or None,
                 model=model)
         else:
             slot = analysis['visual_slots'][int(data['slot_index'])]
