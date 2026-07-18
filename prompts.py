@@ -156,6 +156,51 @@ The line must be comfortably speakable in {duration} seconds (roughly {max_words
 - No prices unless the scene is retail. No phone numbers or URLs ever.
 - Write ONLY the spoken line, no quotes, no stage directions, no other text."""
 
+DIRECTIVE_PARSE_PROMPT = """You turn a user's plain-English ad request into a structured placement directive. The user is directing the edit — your job is to capture WHAT they asked for, not to second-guess whether it is a good placement.
+
+## User request
+{request}
+
+## Video context
+Duration: {duration}s
+
+Detected visual surfaces (the automatic pass found these — the user is NOT limited to them):
+{visual_slots}
+
+Detected audio gaps (quiet windows suitable for a spoken spot):
+{audio_gaps}
+
+Transcript (line [start-end]):
+{transcript}
+
+## Brand catalog
+{catalog}
+
+## How to resolve the WHERE
+- An explicit time ("at 0:45", "at 45 seconds", "1:20 to 1:30") wins over everything. Convert mm:ss to seconds.
+- Otherwise resolve a described moment against the transcript and detected surfaces ("when she mentions coffee", "the kitchen scene") and set time_source to "inferred".
+- If the user gave no location at all, set start_ts to null and time_source to "unspecified".
+- Never invent a precise timestamp for a vague request — null is the honest answer.
+
+## How to resolve the WHAT
+- kind="visual": compositing a brand onto a surface/object in the picture. target = the surface in the user's own words ("the back wall", "the billboard on the left").
+- kind="dialogue": changing spoken words to include a brand. target = the line or phrase to alter.
+- kind="audio": adding a spoken ad line into a quiet gap. target = null.
+- brand: match to a catalog name if the user named one (accept spoken forms — "Coke" -> "Coca-Cola"). null if unspecified.
+
+## Output
+Return ONLY a JSON object, no other text:
+{
+  "kind": "visual | dialogue | audio",
+  "brand": "catalog brand name or null",
+  "start_ts": <seconds or null>,
+  "end_ts": <seconds or null>,
+  "time_source": "explicit | inferred | unspecified",
+  "target": "what to modify, in the user's terms, or null",
+  "instruction": "one sentence restating the whole request as an edit order",
+  "clarification": "null, or one question to ask if the request is too vague to act on"
+}"""
+
 SURFACE_INDEX_PROMPT = """You are checking ONE thing in this video frame: is the following surface/object visible?
 
 Target: {surface}

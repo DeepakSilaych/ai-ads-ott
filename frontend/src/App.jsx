@@ -268,6 +268,72 @@ function AudioBranding({ video, analysis, resume }) {
 
   const latest = results[results.length - 1]
 
+  // ---- user-directed placement -------------------------------------------
+  // The user says where the ad goes and what changes; the backend resolves it
+  // to a real slot (or offers nearest alternatives) which we then place.
+  const [directive, setDirective] = useState('')
+  const [dirBusy, setDirBusy] = useState(false)
+  const [dirResult, setDirResult] = useState(null)
+
+  const runDirective = async () => {
+    if (!directive.trim()) return
+    setDirBusy(true); setError(null); setDirResult(null)
+    try {
+      const res = await fetch('/api/directive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filename: video.filename, request: directive, audience: audienceId,
+        }),
+      }).then((r) => r.json())
+      if (res.error) { setError(res.error); return }
+      setDirResult(res)
+    } catch (err) {
+      // network/backend down — otherwise the button spins forever
+      setError(`Could not reach the server: ${err.message}`)
+    } finally {
+      setDirBusy(false)
+    }
+  }
+
+  // Execute a resolved (or fallback) slot through the normal placement APIs.
+  const placeResolved = async (r, opts = {}) => {
+    setBusy(true); setError(null)
+    const chosenBrand = dirResult?.intent?.brand || brandSel[0]
+    const common = { filename: video.filename, chain, session_id: sessionId }
+    let res
+    try {
+    if (r.kind === 'visual') {
+      res = await fetch('/api/place_visual', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...common, slot_index: r.slot_index, brand: chosenBrand, quality: vQuality }),
+      }).then((x) => x.json())
+    } else if (r.kind === 'audio') {
+      res = await fetch('/api/place_audio', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...common, brand: chosenBrand, start_ts: r.start_ts,
+          gap_duration: r.gap_duration, audience: audienceId,
+          scene_context: dirResult?.intent?.instruction || context || sceneDefault,
+        }),
+      }).then((x) => x.json())
+    } else {
+      res = await fetch('/api/place_dialogue', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...common, swap_index: opts.swapIndex ?? r.swap_index }),
+      }).then((x) => x.json())
+    }
+    if (res.error) { setError(res.error); return }
+    if (res.session_id) setSessionId(res.session_id)
+    setResults((prev) => [...prev, { ...res, key: Date.now() }])
+    setDirResult(null); setDirective('')
+    } catch (err) {
+      setError(`Could not reach the server: ${err.message}`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const startSession = async () => {
     const s = await fetch('/api/sessions', {
       method: 'POST',
@@ -307,6 +373,97 @@ function AudioBranding({ video, analysis, resume }) {
           ]}
         />
       </Group>
+
+      <Paper p="sm" radius="md" mb="sm" withBorder bg="var(--mantine-color-dark-8)">
+        <Text size="xs" c="dimmed" tt="uppercase" fw={700} mb={6}>Direct the edit</Text>
+        <Group align="flex-start" gap="sm" wrap="nowrap">
+          <Textarea
+            placeholder='e.g. "put a Coke billboard on the back wall at 0:45" or "change the line about coffee to mention Starbucks"'
+            size="xs" autosize minRows={1} style={{ flex: 1 }}
+            value={directive}
+            onChange={(e) => setDirective(e.currentTarget.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); runDirective() }
+            }}
+          />
+          <Button size="xs" onClick={runDirective} loading={dirBusy} disabled={!directive.trim()}>
+            Interpret
+          </Button>
+        </Group>
+
+        {dirResult && (
+          <Stack gap={6} mt="sm">
+            <Group gap={6} wrap="wrap">
+              <Badge size="xs" variant="light">{dirResult.intent.kind}</Badge>
+              {dirResult.intent.brand && <Badge size="xs" variant="light" color="grape">{dirResult.intent.brand}</Badge>}
+              {dirResult.intent.start_ts !== null && dirResult.intent.start_ts !== undefined && (
+                <Badge size="xs" variant="light" color="cyan">
+                  @ {dirResult.intent.start_ts}s ({dirResult.intent.time_source})
+                </Badge>
+              )}
+              {dirResult.intent.target && <Badge size="xs" variant="outline" color="gray">{dirResult.intent.target}</Badge>}
+            </Group>
+            <Text size="xs" c="dimmed">{dirResult.intent.instruction}</Text>
+
+            {dirResult.needs_clarification && (
+              <Text size="xs" c="yellow">{dirResult.intent.clarification}</Text>
+            )}
+
+            {dirResult.note && <Text size="xs" c="orange">{dirResult.note}</Text>}
+
+            {dirResult.resolved?.kind === 'dialogue' ? (
+              <Stack gap={4}>
+                {dirResult.resolved.options.map((s, i) => (
+                  <Group key={i} gap="sm" wrap="nowrap">
+                    <Text size="xs" style={{ flex: 1 }}>
+                      [{s.brand}] "{s.full_line_after}" @ {s.start_ts}s
+                    </Text>
+                    <Button size="compact-xs" loading={busy}
+                      onClick={() => placeResolved(dirResult.resolved, { swapIndex: dirResult.resolved.swap_index + i })}>
+                      Apply
+                    </Button>
+                  </Group>
+                ))}
+              </Stack>
+            ) : dirResult.resolved ? (
+              <Group gap="sm">
+                <Text size="xs" c="teal" style={{ flex: 1 }}>
+                  Found: {dirResult.resolved.slot.surface || 'quiet gap'} @{' '}
+                  {dirResult.resolved.slot.timestamp ?? dirResult.resolved.start_ts}s
+                </Text>
+                <Button size="compact-xs" loading={busy}
+                  disabled={!(dirResult.intent.brand || brandSel[0])}
+                  onClick={() => placeResolved(dirResult.resolved)}>
+                  Place it
+                </Button>
+              </Group>
+            ) : null}
+
+            {dirResult.fallbacks?.length > 0 && (
+              <Stack gap={4}>
+                <Text size="xs" c="dimmed">Nearest alternatives:</Text>
+                {dirResult.fallbacks.map((f, i) => (
+                  <Group key={i} gap="sm" wrap="nowrap">
+                    <Text size="xs" style={{ flex: 1 }}>
+                      {f.slot.surface || f.slot.full_line_after || 'quiet gap'} @{' '}
+                      {f.slot.timestamp ?? f.slot.start_ts}s
+                    </Text>
+                    <Button size="compact-xs" variant="light" loading={busy}
+                      disabled={f.kind !== 'dialogue' && !(dirResult.intent.brand || brandSel[0])}
+                      onClick={() => placeResolved(f)}>
+                      Use this
+                    </Button>
+                  </Group>
+                ))}
+              </Stack>
+            )}
+
+            {!(dirResult.intent.brand || brandSel[0]) && !dirResult.needs_clarification && (
+              <Text size="xs" c="yellow">Pick a brand below — the request didn't name one.</Text>
+            )}
+          </Stack>
+        )}
+      </Paper>
 
       <Group align="flex-end" gap="sm" mb="sm">
         <Select

@@ -266,6 +266,117 @@ def place_variants():
     return jsonify({'variants': results})
 
 
+@app.route('/api/directive', methods=['POST'])
+def apply_directive():
+    """Turn a plain-English ad request into a ready-to-place slot.
+
+    Honours the user's chosen spot first; when nothing usable is found there
+    it returns nearest detected alternatives rather than quietly moving the
+    ad somewhere the user did not ask for. Resolved slots are appended to the
+    stored analysis so the existing /api/place_* endpoints can run them by
+    index, unchanged."""
+    import directive
+    data = request.json or {}
+    text = (data.get('request') or '').strip()
+    if not text:
+        return jsonify({'error': 'request text required'}), 400
+    try:
+        video_id = _video_id(data['filename'])
+        with open(_result_path(video_id)) as f:
+            analysis = json.load(f)
+
+        intent = directive.parse(text, analysis, detector._api_key())
+        if intent.get('clarification'):
+            return jsonify({'intent': intent, 'needs_clarification': True})
+
+        start = intent.get('start_ts')
+        end = intent.get('end_ts') or (start + 1 if start is not None else None)
+        out = {'intent': intent, 'resolved': None, 'fallbacks': [], 'note': None}
+
+        if intent['kind'] == 'visual':
+            slot = None
+            if start is not None and intent.get('target'):
+                video_path = os.path.join(
+                    app.config['UPLOAD_FOLDER'], 'original', data['filename'])
+                slot = directive.locate_surface(
+                    video_path, video_id, intent['target'],
+                    max(0, start - directive.SEARCH_PAD_S),
+                    end + directive.SEARCH_PAD_S, detector._api_key())
+            if slot:
+                slots = analysis.setdefault('visual_slots', [])
+                # re-interpreting the same request must not pile up duplicates
+                idx = next((i for i, s in enumerate(slots)
+                            if s.get('user_directed')
+                            and s.get('surface') == slot['surface']
+                            and abs(s.get('timestamp', -99) - slot['timestamp']) < 0.5), None)
+                if idx is None:
+                    slots.append(slot)
+                    idx = len(slots) - 1
+                else:
+                    slots[idx] = slot
+                out['resolved'] = {'kind': 'visual', 'slot_index': idx, 'slot': slot}
+            else:
+                out['fallbacks'] = [
+                    {'kind': 'visual', 'slot_index': analysis['visual_slots'].index(s), 'slot': s}
+                    for s in directive.nearest(analysis.get('visual_slots'), start, 'timestamp')]
+                out['note'] = (f"No usable '{intent.get('target')}' found near "
+                               f"{start}s — showing nearest detected surfaces instead."
+                               if start is not None else
+                               'No location given — showing detected surfaces.')
+
+        elif intent['kind'] == 'audio':
+            gaps = analysis.get('audio_slots') or []
+            hit = next((g for g in gaps
+                        if start is not None and g['start_ts'] <= start <= g['end_ts']), None)
+            if hit:
+                out['resolved'] = {'kind': 'audio', 'start_ts': hit['start_ts'],
+                                   'gap_duration': hit['duration'], 'slot': hit}
+            else:
+                out['fallbacks'] = [{'kind': 'audio', 'start_ts': g['start_ts'],
+                                     'gap_duration': g['duration'], 'slot': g}
+                                    for g in directive.nearest(gaps, start, 'start_ts')]
+                out['note'] = (f'{start}s is not inside a quiet gap — a spot there would '
+                               'talk over the dialogue. Nearest usable gaps shown.'
+                               if start is not None else
+                               'No location given — showing detected gaps.')
+
+        else:  # dialogue
+            transcript = analysis.get('transcript') or []
+            window = [s for s in transcript
+                      if start is None or s['end_ts'] >= start - 2 and s['start_ts'] <= (end or start) + 2]
+            swaps = detector.detect_dialogue_swaps(
+                window or transcript, detector._api_key(),
+                scene_context=intent.get('instruction', ''),
+                brand=intent.get('brand'), profile=data.get('audience')) if window else []
+            for swap in swaps:
+                swap['user_directed'] = True
+            if swaps:
+                existing = analysis.setdefault('dialogue_swaps', [])
+                # drop any prior user-directed swaps for this same line first,
+                # so repeated requests replace rather than accumulate
+                keep = [s for s in existing
+                        if not (s.get('user_directed')
+                                and start is not None
+                                and abs(s.get('start_ts', -99) - start) < 2)]
+                analysis['dialogue_swaps'] = keep + swaps
+                out['resolved'] = {'kind': 'dialogue',
+                                   'swap_index': len(keep),
+                                   'options': swaps}
+            else:
+                out['fallbacks'] = [
+                    {'kind': 'dialogue',
+                     'swap_index': analysis.get('dialogue_swaps', []).index(s), 'slot': s}
+                    for s in directive.nearest(analysis.get('dialogue_swaps'), start, 'start_ts')]
+                out['note'] = ('No natural length-matched swap exists in that line — '
+                               'nearest existing proposals shown.')
+
+        with open(_result_path(video_id), 'w') as f:
+            json.dump(analysis, f)
+        return jsonify(out)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/brands')
 def list_brands():
     """Catalog, optionally ranked for ?audience=<profile id> so the picker
