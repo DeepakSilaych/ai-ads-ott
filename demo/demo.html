@@ -24,13 +24,15 @@
   .drop { margin:8px 28px; border:1.5px dashed #ddd; border-radius:12px; padding:40px;
           text-align:center; color:#999; font-size:13px; }
   .drop.over { border-color:#111; color:#111; }
+  .audiobox { display:flex; align-items:center; justify-content:center; background:#fafafa; aspect-ratio:16/5; }
+  .audiobox audio { width:90%; }
 </style>
 </head>
 <body>
 
 <header>
   <h1>Demo Reel</h1>
-  <label class="btn">Upload<input type="file" accept="video/*" multiple onchange="add(this.files)"></label>
+  <label class="btn">Upload<input type="file" accept="video/*,audio/*" multiple onchange="add(this.files)"></label>
   <input class="ts" id="t0" placeholder="from 0:00">
   <input class="ts" id="t1" placeholder="to end">
   <button class="primary" onclick="playAll()">Play all</button>
@@ -38,7 +40,7 @@
   <button onclick="stopAll()">Stop</button>
 </header>
 
-<div class="drop" id="drop">drop videos here</div>
+<div class="drop" id="drop">drop videos or audio here</div>
 <div class="grid" id="grid"></div>
 
 <script>
@@ -49,12 +51,15 @@ const drop = document.getElementById('drop');
 function add(files) {
   for (const f of files) {
     const i = vids.length;
+    const isAudio = f.type.startsWith('audio');
     const card = document.createElement('div');
     card.className = 'card';
-    card.innerHTML = `<video src="${URL.createObjectURL(f)}" controls preload="metadata"></video>
-      <div class="row"><div class="name">${f.name}</div><button onclick="playOne(${i})">Play</button></div>`;
+    card.innerHTML = (isAudio
+      ? `<div class="audiobox"><audio src="${URL.createObjectURL(f)}" controls preload="metadata"></audio></div>`
+      : `<video src="${URL.createObjectURL(f)}" controls preload="metadata"></video>`) +
+      `<div class="row"><div class="name">${f.name}</div><button onclick="playOne(${i})">Play</button></div>`;
     grid.appendChild(card);
-    const v = card.querySelector('video');
+    const v = card.querySelector(isAudio ? 'audio' : 'video');
     v.onplay = () => card.classList.add('playing');
     v.onpause = v.onended = () => card.classList.remove('playing');
     vids.push(v);
