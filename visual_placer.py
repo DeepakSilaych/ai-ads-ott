@@ -124,7 +124,7 @@ def build_prompt(slot, brand):
 V2V_MODEL = os.environ.get("V2V_MODEL", "aleph2")  # aleph2 | gemini_omni_flash | seedance2_mini
 
 
-def edit_segment(segment_path, prompt, keyframe_png=None, model=None):
+def edit_segment(segment_path, prompt, keyframe_png=None, model=None, keyframes=None):
     """Run a video-to-video edit on the segment. Model selectable: aleph2 is
     the premium editor; gemini_omni_flash / seedance2_mini are faster+cheaper
     and fine for small static-surface replacements."""
@@ -140,6 +140,8 @@ def edit_segment(segment_path, prompt, keyframe_png=None, model=None):
         kwargs.update(prompt_video=video_uri)  # seedance branch naming
     elif model == "aleph2":
         kwargs.update(video_uri=video_uri, ratio="16:9")
+        if keyframes:
+            kwargs.update(keyframes=keyframes)
     else:
         kwargs.update(video_uri=video_uri)
 
@@ -279,39 +281,66 @@ def run_track(filename, track, brand_name, chain=False, duration=None, windows=N
             "prompt": prompt, "engine": f"runway-{model_name}", "output": out_path,
         }
 
-    if len(pieces) == 1:
-        combined = pieces[0]
-    else:
-        inputs = []
-        for p in pieces:
-            inputs += ["-i", p]
-        n = len(pieces)
-        fc = "".join(f"[{i}:v]" for i in range(n)) + f"concat=n={n}:v=1:a=0[out]"
-        combined = os.path.join(WORK_DIR, "combined.mp4")
-        subprocess.run(
-            ["ffmpeg", "-y", *inputs, "-filter_complex", fc, "-map", "[out]",
-             "-c:v", "libx264", "-crf", "18", combined],
-            capture_output=True, check=True)
+    # group windows into batches: Aleph rejects inputs with >10 detected
+    # shots (TOO_MANY_SHOTS) or >30s; keep batches comfortably under both
+    shot_counts = [_count_shots(p) for p in pieces]
+    batches, cur, cur_shots, cur_dur = [], [], 0, 0.0
+    for i, ((s, e), n_shots) in enumerate(zip(windows, shot_counts)):
+        if cur and (cur_shots + n_shots > 9 or cur_dur + (e - s) > 28):
+            batches.append(cur)
+            cur, cur_shots, cur_dur = [], 0, 0.0
+        cur.append(i)
+        cur_shots += n_shots
+        cur_dur += e - s
+    if cur:
+        batches.append(cur)
 
-    prompt = build_prompt(track, brand_name) + (
+    base_prompt = build_prompt(track, brand_name) + (
         " The video contains several cuts of the same location; apply the SAME"
-        " replacement consistently in every shot." if len(pieces) > 1 else "")
-    edited = edit_segment(combined, prompt, model=model)
+        " replacement consistently in every shot.")
 
-    # split the edited video back at the window boundaries and splice each in
-    src = video_path
-    offset = 0.0
-    for i, (s, e) in enumerate(windows):
-        span = e - s
-        part = os.path.join(WORK_DIR, f"edited_w{i}.mp4")
-        subprocess.run(
-            ["ffmpeg", "-y", "-ss", f"{offset:.3f}", "-to", f"{offset + span:.3f}",
-             "-i", edited, "-c:v", "libx264", "-crf", "18", part],
-            capture_output=True, check=True)
-        step_out = out_path if i == len(windows) - 1 else os.path.join(WORK_DIR, f"step{i}.mp4")
-        splice_video(src, step_out, part, s, e)
-        src = step_out
-        offset += span
+    src_v = video_path
+    anchor_png = None  # first batch's edited look anchors later batches
+    for bi, batch in enumerate(batches):
+        if len(batch) == 1:
+            combined = pieces[batch[0]]
+        else:
+            inputs = []
+            for i in batch:
+                inputs += ["-i", pieces[i]]
+            fc = "".join(f"[{j}:v]" for j in range(len(batch))) + \
+                 f"concat=n={len(batch)}:v=1:a=0[out]"
+            combined = os.path.join(WORK_DIR, f"combined_b{bi}.mp4")
+            subprocess.run(
+                ["ffmpeg", "-y", *inputs, "-filter_complex", fc, "-map", "[out]",
+                 "-c:v", "libx264", "-crf", "18", combined],
+                capture_output=True, check=True)
+
+        prompt = base_prompt
+        keyframes = None
+        if anchor_png:
+            with open(anchor_png, "rb") as f:
+                img_uri = "data:image/png;base64," + base64.b64encode(f.read()).decode()
+            keyframes = [{"uri": img_uri, "seconds": 0.5}]
+            prompt += " Match the replacement shown in the keyframe exactly."
+        edited = edit_segment(combined, prompt, model=model, keyframes=keyframes)
+        if anchor_png is None and len(batches) > 1:
+            anchor_png = _extract_frame(edited, 0.5, os.path.join(WORK_DIR, "anchor.png"))
+
+        offset = 0.0
+        for i in batch:
+            s, e = windows[i]
+            span = e - s
+            part = os.path.join(WORK_DIR, f"edited_w{i}.mp4")
+            subprocess.run(
+                ["ffmpeg", "-y", "-ss", f"{offset:.3f}", "-to", f"{offset + span:.3f}",
+                 "-i", edited, "-c:v", "libx264", "-crf", "18", part],
+                capture_output=True, check=True)
+            last = (bi == len(batches) - 1 and i == batch[-1])
+            step_out = out_path if last else os.path.join(WORK_DIR, f"step{bi}_{i}.mp4")
+            splice_video(src_v, step_out, part, s, e)
+            src_v = step_out
+            offset += span
 
     return {
         "type": "visual",
