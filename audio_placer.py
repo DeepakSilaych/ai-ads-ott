@@ -68,8 +68,38 @@ def write_ad_script(brand_name, scene_context, duration_s):
     raise RuntimeError("LLM returned no ad script after 3 attempts")
 
 
+SMALLEST_URL = "https://waves-api.smallest.ai/api/v1/lightning-v3.1/get_speech"
+SMALLEST_VOICE = "albus"  # stock voice tagged for advertisement
+
+
+def _smallest_key():
+    with open(os.path.join(BASE_DIR, ".env")) as f:
+        for line in f:
+            if line.startswith("SMALLEST_API="):
+                return line.strip().split("=", 1)[1]
+    return None
+
+
 def synthesize(text, out_path, voice=TTS_VOICE):
-    """edge-tts text -> mp3."""
+    """Ad-spot TTS: smallest.ai lightning-v3.1 (primary), edge-tts fallback."""
+    key = _smallest_key()
+    if key:
+        try:
+            r = requests.post(
+                SMALLEST_URL,
+                headers={"Authorization": f"Bearer {key}",
+                         "Content-Type": "application/json"},
+                json={"text": text, "voice_id": SMALLEST_VOICE,
+                      "sample_rate": 24000, "output_format": "wav"},
+                timeout=120)
+            r.raise_for_status()
+            wav_path = os.path.splitext(out_path)[0] + ".wav"
+            with open(wav_path, "wb") as f:
+                f.write(r.content)
+            return wav_path
+        except Exception:
+            pass  # fall through to edge-tts
+
     import edge_tts
 
     async def run():
@@ -122,7 +152,7 @@ def run(filename, brand_name, start_ts, gap_duration, scene_context="", chain=Fa
     script = write_ad_script(brand_name, scene_context, min(gap_duration - 1, 8))
     safe = re.sub(r"[^a-z0-9]+", "_", brand_name.lower())
     tts_path = os.path.join(TTS_DIR, f"{safe}_{int(start_ts)}.mp3")
-    synthesize(script, tts_path)
+    tts_path = synthesize(script, tts_path)
 
     info = place_audio_ad(video_path, out_path, tts_path, start_ts + 0.5)
     return {
