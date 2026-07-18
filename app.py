@@ -271,7 +271,18 @@ def place_dialogue():
         swap = analysis['dialogue_swaps'][int(data['swap_index'])]
         chain, session_id = _session_setup(data)
         engine = data.get('engine', 'auto')
-        if engine in ('auto', 'voicecraft'):
+        if engine in ('auto', 'seed'):
+            try:
+                result = dialogue_placer.run_seed(
+                    filename=data['filename'], swap=swap,
+                    transcript=analysis['transcript'], chain=chain)
+            except Exception:
+                if engine == 'seed':
+                    raise
+                result = None
+        else:
+            result = None
+        if result is None and engine in ('auto', 'voicecraft'):
             try:
                 result = dialogue_placer.run_voicecraft(
                     filename=data['filename'], swap=swap,
@@ -282,7 +293,7 @@ def place_dialogue():
                 result = dialogue_placer.run(
                     filename=data['filename'], swap=swap,
                     transcript=analysis['transcript'], chain=chain)
-        else:
+        if result is None:
             result = dialogue_placer.run(
                 filename=data['filename'], swap=swap,
                 transcript=analysis['transcript'], chain=chain)

@@ -8,6 +8,7 @@ Pipeline:
 3. Overlay at the swap timestamp with a slight duck of the original bed.
 """
 import os
+import re
 import subprocess
 import sys
 
@@ -142,6 +143,98 @@ def _splice_clip(video_path, out_path, new_clip_wav, clip_start, clip_end):
          "-filter_complex", fc, "-map", "0:v", "-map", "[out]",
          "-c:v", "copy", "-c:a", "aac", out_path],
         capture_output=True, check=True)
+
+
+_seed_ref_cache = {}
+
+
+def run_seed(filename, swap, transcript, chain=False):
+    """Seamless swap via Runway Seed Audio: clone the speaker from the
+    video's Demucs vocal stem, speak the WHOLE edited line in that voice,
+    and replace the line between its natural pause boundaries — the splice
+    points land in silence, not mid-word."""
+    from runwayml import RunwayML
+    import requests as rq
+
+    os.makedirs(EDITED_DIR, exist_ok=True)
+    os.makedirs(TTS_DIR, exist_ok=True)
+    video_path = os.path.join(BASE_DIR, "static", "uploads", "original", filename)
+    out_path = os.path.join(EDITED_DIR, filename)
+    if chain and os.path.exists(out_path):
+        prev = out_path + ".prev.mp4"
+        os.replace(out_path, prev)
+        video_path = prev
+
+    seg = next((s for s in transcript
+                if s["start_ts"] <= swap["start_ts"] and swap["end_ts"] <= s["end_ts"] + 0.5),
+               None)
+    if seg is None:
+        raise RuntimeError("swap span not inside any transcript segment")
+    seg_i = transcript.index(seg)
+    next_start = (transcript[seg_i + 1]["start_ts"]
+                  if seg_i + 1 < len(transcript) else seg["end_ts"] + 1.0)
+    span = seg["end_ts"] - seg["start_ts"]
+    slack = max(next_start - seg["end_ts"] - 0.15, 0)
+
+    key = _runway_key()
+    client = RunwayML(api_key=key)
+    if filename not in _seed_ref_cache:
+        # clone reference: clean vocals of the whole video
+        stems_dir = os.path.join(TTS_DIR, "stems_ref")
+        subprocess.run(
+            [sys.executable, "-m", "demucs", "--two-stems=vocals", "-n", "htdemucs",
+             "-o", stems_dir, video_path],
+            capture_output=True, check=True)
+        base = os.path.splitext(os.path.basename(video_path))[0]
+        ref = os.path.join(stems_dir, "htdemucs", base, "vocals.wav")
+        up = client.uploads.create_ephemeral(file=open(ref, "rb"))
+        _seed_ref_cache[filename] = up.uri
+    ref_uri = _seed_ref_cache[filename]
+
+    line = (swap.get("full_line_after") or "").strip()
+    task = client.text_to_speech.create(
+        model="seed_audio",
+        prompt_text=line,
+        voice={"type": "reference-audio", "audio_uri": ref_uri},
+        output_format="wav", sample_rate=44100,
+    ).wait_for_task_output(timeout=600)
+    line_wav = os.path.join(TTS_DIR, "seed_line.wav")
+    r = rq.get(task.output[0], timeout=300)
+    r.raise_for_status()
+    with open(line_wav, "wb") as f:
+        f.write(r.content)
+
+    # verify the generated line actually says the brand
+    from faster_whisper import WhisperModel
+    m = WhisperModel("base", device="cpu", compute_type="int8")
+    segs, _ = m.transcribe(line_wav)
+    heard = " ".join(s.text for s in segs).lower()
+    # verify against the actual replacement words (the brand as SPOKEN —
+    # "Coke", not the catalog name "Coca-Cola")
+    repl_words = re.findall(r"[a-z']+", (swap.get("replacement_text") or "").lower())
+    marker = max(repl_words, key=len) if repl_words else ""
+    if marker[:4] not in heard:
+        raise RuntimeError(f"seed line does not speak the replacement (heard: {heard[:80]})")
+
+    # fit into the line span, allowed to run into the trailing pause
+    fitted = fit_word_audio(line_wav, span + slack)
+    dur = overlay_word(video_path, out_path, fitted, seg["start_ts"], duck_db=-30)
+    return {
+        "spoken": line,
+        "at_ts": seg["start_ts"],
+        "duration": round(dur, 2),
+        "engine": "runway-seed-audio",
+        "output": out_path,
+        "line_after": line,
+    }
+
+
+def _runway_key():
+    with open(os.path.join(BASE_DIR, ".env")) as f:
+        for line in f:
+            if line.startswith("RUNWAY_API="):
+                return line.strip().split("=", 1)[1]
+    raise RuntimeError("RUNWAY_API not in .env")
 
 
 def run_voicecraft(filename, swap, transcript, chain=False, pad_s=1.5):
