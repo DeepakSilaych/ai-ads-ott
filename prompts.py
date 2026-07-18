@@ -176,6 +176,9 @@ Transcript (line [start-end]):
 ## Brand catalog
 {catalog}
 
+## Audience segments
+{segments}
+
 ## How to resolve the WHERE
 - An explicit time ("at 0:45", "at 45 seconds", "1:20 to 1:30") wins over everything. Convert mm:ss to seconds.
 - Otherwise resolve a described moment against the transcript and detected surfaces ("when she mentions coffee", "the kitchen scene") and set time_source to "inferred".
@@ -183,21 +186,45 @@ Transcript (line [start-end]):
 - Never invent a precise timestamp for a vague request — null is the honest answer.
 
 ## How to resolve the WHAT
-- kind="visual": compositing a brand onto a surface/object in the picture. target = the surface in the user's own words ("the back wall", "the billboard on the left").
+- kind="visual": compositing a brand onto a surface/object in the picture. target = the surface in the user's own words ("the back wall", "the billboard on the left"). Name ONLY the thing — never fold the time into it ("podium", not "podium at 8 seconds"), because target is matched against video frames on its own.
 - kind="dialogue": changing spoken words to include a brand. target = the line or phrase to alter.
 - kind="audio": adding a spoken ad line into a quiet gap. target = null.
-- brand: match to a catalog name if the user named one (accept spoken forms — "Coke" -> "Coca-Cola"). null if unspecified.
+
+## How to resolve the VARIANTS
+One request can ask for several ads at the same spot. Return one entry in
+"variants" per ad to generate — usually one, more when the user asks for it.
+
+- "make it a Coke ad" -> one variant, brand Coca-Cola.
+- "3 different drink brands for 3 regions" -> three variants, three DIFFERENT
+  beverage brands from the catalog, one region each. Invent sensible distinct
+  regions only if the user did not name them.
+- "one for teens and one for parents" -> two variants, same or different
+  brand, different audience segment ids.
+- Never repeat the same brand+region+audience combination twice.
+- Only use brand names that appear in the catalog above.
+- If the user names no brand, pick the best catalog fit for the scene and the
+  audience, and say so in the variant's "why".
+
+Per variant:
+- brand: catalog name (accept spoken forms — "Coke" -> "Coca-Cola").
+- region: a place/market the ad is aimed at, or null. Free text ("India",
+  "US Midwest") — this only colours the creative, it is not a lookup key.
+- audience: one segment id from the list above, or null.
+- why: one short clause on why this brand suits this variant.
 
 ## Output
 Return ONLY a JSON object, no other text:
 {
   "kind": "visual | dialogue | audio",
-  "brand": "catalog brand name or null",
   "start_ts": <seconds or null>,
   "end_ts": <seconds or null>,
   "time_source": "explicit | inferred | unspecified",
   "target": "what to modify, in the user's terms, or null",
   "instruction": "one sentence restating the whole request as an edit order",
+  "variants": [
+    {"brand": "catalog name", "region": "text or null",
+     "audience": "segment id or null", "why": "short clause"}
+  ],
   "clarification": "null, or one question to ask if the request is too vague to act on"
 }"""
 

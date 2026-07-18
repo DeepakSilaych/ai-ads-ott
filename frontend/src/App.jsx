@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   AppShell, Badge, Box, Button, Card, Group, HoverCard, Image, Loader,
-  MultiSelect, Paper, ScrollArea, SegmentedControl, Select, Stack, Text, Textarea, Title, Tooltip, rem, Modal, FileInput,
+  Collapse, MultiSelect, Paper, ScrollArea, SegmentedControl, Select, Stack, Text, Textarea, Title, Tooltip, rem, Modal, FileInput,
 } from '@mantine/core'
 import {
   IconMaximize, IconMessage, IconMovie, IconPhoto, IconRefresh, IconScan, IconSparkles, IconVolume, IconWaveSine, IconUpload,
@@ -274,6 +274,9 @@ function AudioBranding({ video, analysis, resume }) {
   const [directive, setDirective] = useState('')
   const [dirBusy, setDirBusy] = useState(false)
   const [dirResult, setDirResult] = useState(null)
+  // chat is the primary path; the old per-field controls stay one click away
+  // for anything the chat can't express or when a parse comes back wrong
+  const [showManual, setShowManual] = useState(false)
 
   const runDirective = async () => {
     if (!directive.trim()) return
@@ -293,6 +296,36 @@ function AudioBranding({ video, analysis, resume }) {
       setError(`Could not reach the server: ${err.message}`)
     } finally {
       setDirBusy(false)
+    }
+  }
+
+  // Render every variant the request asked for, each in its own session.
+  const placeVariants = async (r) => {
+    setBusy(true); setError(null)
+    try {
+      const res = await fetch('/api/place_directive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filename: video.filename,
+          resolved: r,
+          variants: dirResult.intent.variants,
+          quality: vQuality,
+          scene_context: dirResult.intent.instruction || sceneDefault,
+        }),
+      }).then((x) => x.json())
+      if (res.error) { setError(res.error); return }
+      const ok = (res.variants || []).filter((v) => !v.error)
+      const failed = (res.variants || []).filter((v) => v.error)
+      if (failed.length) {
+        setError(`${failed.length} of ${res.variants.length} variants failed: ${failed[0].error}`)
+      }
+      setResults((prev) => [...prev, ...ok.map((v, i) => ({ ...v, key: Date.now() + i }))])
+      if (ok.length) { setDirResult(null); setDirective('') }
+    } catch (err) {
+      setError(`Could not reach the server: ${err.message}`)
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -364,22 +397,19 @@ function AudioBranding({ video, analysis, resume }) {
           <Text size="xs" c="dimmed" tt="uppercase" fw={700}>Ad Integration</Text>
           <Badge size="xs" variant="outline" color="gray" ff="monospace">session {sessionId}</Badge>
         </Group>
-        <SegmentedControl
-          size="xs" value={mode} onChange={setMode}
-          data={[
-            { value: 'visual', label: 'Visual placement' },
-            { value: 'dialogue', label: 'Dialogue swap (seamless)' },
-            { value: 'gap', label: 'Gap spot' },
-          ]}
-        />
+        <Button size="compact-xs" variant="subtle" onClick={() => setShowManual((v) => !v)}>
+          {showManual ? 'Hide manual controls' : 'Manual controls'}
+        </Button>
       </Group>
 
       <Paper p="sm" radius="md" mb="sm" withBorder bg="var(--mantine-color-dark-8)">
-        <Text size="xs" c="dimmed" tt="uppercase" fw={700} mb={6}>Direct the edit</Text>
+        <Text size="xs" c="dimmed" tt="uppercase" fw={700} mb={6}>Describe the ad you want</Text>
         <Group align="flex-start" gap="sm" wrap="nowrap">
           <Textarea
-            placeholder='e.g. "put a Coke billboard on the back wall at 0:45" or "change the line about coffee to mention Starbucks"'
-            size="xs" autosize minRows={1} style={{ flex: 1 }}
+            placeholder={'e.g. "put a Coke billboard on the back wall at 0:45"\n'
+              + '"3 different drink brands for 3 different regions on the podium at 0:08"\n'
+              + '"change the line about coffee to mention Starbucks, aimed at young professionals"'}
+            size="xs" autosize minRows={2} style={{ flex: 1 }}
             value={directive}
             onChange={(e) => setDirective(e.currentTarget.value)}
             onKeyDown={(e) => {
@@ -395,7 +425,11 @@ function AudioBranding({ video, analysis, resume }) {
           <Stack gap={6} mt="sm">
             <Group gap={6} wrap="wrap">
               <Badge size="xs" variant="light">{dirResult.intent.kind}</Badge>
-              {dirResult.intent.brand && <Badge size="xs" variant="light" color="grape">{dirResult.intent.brand}</Badge>}
+              {(dirResult.intent.variants || []).length > 1 && (
+                <Badge size="xs" variant="filled" color="grape">
+                  {dirResult.intent.variants.length} variants
+                </Badge>
+              )}
               {dirResult.intent.start_ts !== null && dirResult.intent.start_ts !== undefined && (
                 <Badge size="xs" variant="light" color="cyan">
                   @ {dirResult.intent.start_ts}s ({dirResult.intent.time_source})
@@ -404,6 +438,19 @@ function AudioBranding({ video, analysis, resume }) {
               {dirResult.intent.target && <Badge size="xs" variant="outline" color="gray">{dirResult.intent.target}</Badge>}
             </Group>
             <Text size="xs" c="dimmed">{dirResult.intent.instruction}</Text>
+
+            {(dirResult.intent.variants || []).length > 0 && (
+              <Stack gap={2}>
+                {dirResult.intent.variants.map((v, i) => (
+                  <Group key={i} gap={6} wrap="wrap">
+                    <Badge size="xs" variant="light" color="grape">{v.brand}</Badge>
+                    {v.region && <Badge size="xs" variant="outline" color="blue">{v.region}</Badge>}
+                    {v.audience && <Badge size="xs" variant="outline" color="teal">{v.audience}</Badge>}
+                    {v.why && <Text size="xs" c="dimmed">{v.why}</Text>}
+                  </Group>
+                ))}
+              </Stack>
+            )}
 
             {dirResult.needs_clarification && (
               <Text size="xs" c="yellow">{dirResult.intent.clarification}</Text>
@@ -432,9 +479,13 @@ function AudioBranding({ video, analysis, resume }) {
                   {dirResult.resolved.slot.timestamp ?? dirResult.resolved.start_ts}s
                 </Text>
                 <Button size="compact-xs" loading={busy}
-                  disabled={!(dirResult.intent.brand || brandSel[0])}
-                  onClick={() => placeResolved(dirResult.resolved)}>
-                  Place it
+                  disabled={!(dirResult.intent.variants?.length || brandSel[0])}
+                  onClick={() => ((dirResult.intent.variants || []).length > 1
+                    ? placeVariants(dirResult.resolved)
+                    : placeResolved(dirResult.resolved))}>
+                  {(dirResult.intent.variants || []).length > 1
+                    ? `Generate ${dirResult.intent.variants.length} ads`
+                    : 'Place it'}
                 </Button>
               </Group>
             ) : null}
@@ -458,12 +509,26 @@ function AudioBranding({ video, analysis, resume }) {
               </Stack>
             )}
 
-            {!(dirResult.intent.brand || brandSel[0]) && !dirResult.needs_clarification && (
-              <Text size="xs" c="yellow">Pick a brand below — the request didn't name one.</Text>
+            {!(dirResult.intent.variants?.length || brandSel[0]) && !dirResult.needs_clarification && (
+              <Text size="xs" c="yellow">
+                No brand matched the catalog — name one, or pick it in Manual controls.
+              </Text>
             )}
           </Stack>
         )}
       </Paper>
+
+      <Collapse expanded={showManual}>
+      <Group justify="flex-end" mb="sm">
+        <SegmentedControl
+          size="xs" value={mode} onChange={setMode}
+          data={[
+            { value: 'visual', label: 'Visual placement' },
+            { value: 'dialogue', label: 'Dialogue swap (seamless)' },
+            { value: 'gap', label: 'Gap spot' },
+          ]}
+        />
+      </Group>
 
       <Group align="flex-end" gap="sm" mb="sm">
         <Select
@@ -578,6 +643,7 @@ function AudioBranding({ video, analysis, resume }) {
           />
         </>
       )}
+      </Collapse>
       {error && <Text size="xs" c="red" mt="xs">{error}</Text>}
 
       {latest && (

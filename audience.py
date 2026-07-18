@@ -133,6 +133,14 @@ def rank(catalog, profile, min_score=0.0):
     return scored
 
 
+def profiles_for_prompt():
+    """Compact segment list so an LLM can map 'for younger viewers' -> gen_z."""
+    return "\n".join(
+        f"- {p['id']}: {p['label']} (age {', '.join(p['age'])}; "
+        f"interests {', '.join(p['interests'])})"
+        for p in PROFILES)
+
+
 def describe(profile):
     """One-paragraph cohort description for LLM prompt context."""
     profile = resolve(profile)

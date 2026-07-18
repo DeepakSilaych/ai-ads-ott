@@ -377,6 +377,61 @@ def apply_directive():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/place_directive', methods=['POST'])
+def place_directive():
+    """Render every variant of a resolved directive, one session each.
+
+    Same one-session-per-variant shape as /api/place_variants, but each
+    variant carries its own audience segment and region so the creative
+    differs per market, not just the brand name."""
+    data = request.json or {}
+    resolved = data.get('resolved') or {}
+    variants = data.get('variants') or []
+    if not resolved:
+        return jsonify({'error': 'resolved slot required'}), 400
+    if not variants:
+        return jsonify({'error': 'at least one variant required'}), 400
+
+    kind = resolved.get('kind')
+    base_context = data.get('scene_context') or ''
+    results = []
+    for v in variants:
+        brand = v.get('brand')
+        label = ' / '.join(x for x in [brand, v.get('region')] if x)
+        session = _create_session(data['filename'], note=f'variant: {label}')
+        # region is creative direction, not a lookup key — it reaches the LLM
+        # through the scene context rather than any brand metadata
+        context = base_context
+        if v.get('region'):
+            context = f"{context} Aimed at viewers in {v['region']}.".strip()
+        payload = {'filename': data['filename'], 'brand': brand,
+                   'session_id': session['id'], 'chain': False,
+                   'audience': v.get('audience')}
+        try:
+            if kind == 'visual':
+                payload.update(slot_index=resolved['slot_index'],
+                               quality=data.get('quality', 'draft'))
+                with app.test_request_context(json=payload):
+                    resp = place_visual()
+            elif kind == 'audio':
+                payload.update(start_ts=resolved['start_ts'],
+                               gap_duration=resolved['gap_duration'],
+                               scene_context=context)
+                with app.test_request_context(json=payload):
+                    resp = place_audio()
+            else:
+                payload.update(swap_index=v.get('swap_index', resolved.get('swap_index')))
+                with app.test_request_context(json=payload):
+                    resp = place_dialogue()
+            body = resp[0].get_json() if isinstance(resp, tuple) else resp.get_json()
+        except Exception as e:
+            body = {'error': str(e)}
+        body.update(brand=brand, region=v.get('region'),
+                    audience=v.get('audience'), session_id=session['id'])
+        results.append(body)
+    return jsonify({'variants': results})
+
+
 @app.route('/api/brands')
 def list_brands():
     """Catalog, optionally ranked for ?audience=<profile id> so the picker

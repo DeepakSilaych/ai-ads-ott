@@ -19,7 +19,8 @@ import re
 import requests
 
 from prompts import DIRECTIVE_PARSE_PROMPT, SURFACE_INDEX_PROMPT
-from brands_catalog import catalog_for_prompt
+from brands_catalog import catalog_for_prompt, load_catalog
+import audience
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 VISION_MODEL = "z-ai/glm-4.6v"
@@ -62,7 +63,8 @@ def parse(request_text, analysis, api_key):
               .replace("{visual_slots}", _fmt_slots(analysis.get("visual_slots")))
               .replace("{audio_gaps}", _fmt_gaps(analysis.get("audio_slots")))
               .replace("{transcript}", _fmt_transcript(analysis.get("transcript")))
-              .replace("{catalog}", catalog_for_prompt()))
+              .replace("{catalog}", catalog_for_prompt())
+              .replace("{segments}", audience.profiles_for_prompt()))
 
     resp = requests.post(
         OPENROUTER_URL,
@@ -79,7 +81,36 @@ def parse(request_text, analysis, api_key):
     intent = json.loads(match.group(0))
     if intent.get("kind") not in ("visual", "dialogue", "audio"):
         raise ValueError(f"unsupported directive kind: {intent.get('kind')!r}")
+    intent["variants"] = _clean_variants(intent.get("variants"))
+    # legacy single-brand field, kept so existing callers keep working
+    intent["brand"] = intent["variants"][0]["brand"] if intent["variants"] else None
     return intent
+
+
+def _clean_variants(variants):
+    """Drop hallucinated brands and duplicate combinations.
+
+    The model picks brands from a catalog in its prompt, so it can still
+    invent one; anything not in the real catalog is dropped rather than
+    failing downstream when the placer looks the brand up."""
+    known = {b["name"].lower(): b["name"] for b in load_catalog()}
+    valid_segments = {p["id"] for p in audience.PROFILES}
+    out, seen = [], set()
+    for v in (variants or []):
+        if not isinstance(v, dict):
+            continue
+        name = known.get(str(v.get("brand", "")).strip().lower())
+        if not name:
+            continue
+        seg = v.get("audience")
+        seg = seg if seg in valid_segments else None
+        key = (name, (v.get("region") or "").lower(), seg)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({"brand": name, "region": v.get("region") or None,
+                    "audience": seg, "why": v.get("why") or ""})
+    return out
 
 
 def _frames_near(frames_dir, start_ts, end_ts):
