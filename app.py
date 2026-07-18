@@ -331,11 +331,14 @@ def place_visual():
                     video_path, video_id, track['surface'])
                 with open(_result_path(video_id), 'w') as f:
                     json.dump(analysis, f)
+            quality = data.get('quality', 'final')
+            model = 'gemini_omni_flash' if quality == 'draft' else 'aleph2'
             result = visual_placer.run_track(
                 filename=data['filename'], track=track,
                 brand_name=data['brand'], chain=chain,
                 duration=analysis.get('duration'),
-                windows=[list(w) for w in track['indexed']['windows']] or None)
+                windows=[list(w) for w in track['indexed']['windows']] or None,
+                model=model)
         else:
             slot = analysis['visual_slots'][int(data['slot_index'])]
             result = visual_placer.run(

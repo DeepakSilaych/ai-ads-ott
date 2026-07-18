@@ -121,22 +121,30 @@ def build_prompt(slot, brand):
     )
 
 
-def edit_segment(segment_path, prompt, keyframe_png=None):
-    """Run Aleph 2.0 on the segment. Returns path of the edited segment."""
+V2V_MODEL = os.environ.get("V2V_MODEL", "aleph2")  # aleph2 | gemini_omni_flash | seedance2_mini
+
+
+def edit_segment(segment_path, prompt, keyframe_png=None, model=None):
+    """Run a video-to-video edit on the segment. Model selectable: aleph2 is
+    the premium editor; gemini_omni_flash / seedance2_mini are faster+cheaper
+    and fine for small static-surface replacements."""
     from runwayml import RunwayML
 
+    model = model or V2V_MODEL
     client = RunwayML(api_key=_runway_key())
     with open(segment_path, "rb") as f:
         video_uri = "data:video/mp4;base64," + base64.b64encode(f.read()).decode()
 
-    # NOTE: aleph2 `keyframes` are time-anchored target frames ({uri, at}),
-    # not style references — a brand card would wrongly anchor a frame, so we
-    # rely on the prompt alone.
+    kwargs = {"model": model, "prompt_text": prompt}
+    if model.startswith("seedance"):
+        kwargs.update(prompt_video=video_uri)  # seedance branch naming
+    elif model == "aleph2":
+        kwargs.update(video_uri=video_uri, ratio="16:9")
+    else:
+        kwargs.update(video_uri=video_uri)
+
     task = client.video_to_video.create(
-        model="aleph2",
-        video_uri=video_uri,
-        prompt_text=prompt,
-        ratio="16:9",
+        **kwargs,
     ).wait_for_task_output(timeout=15 * 60)
 
     out_url = task.output[0]
@@ -188,7 +196,7 @@ def track_windows(track, duration=None, pad_s=1.0, sample_s=2.0, merge_gap_s=3.0
     return windows
 
 
-def run_track(filename, track, brand_name, chain=False, duration=None, windows=None):
+def run_track(filename, track, brand_name, chain=False, duration=None, windows=None, model=None):
     """Edit EVERY occurrence of a tracked surface in ONE Aleph call:
     cut all the track's windows, concat into a single video, edit it,
     split at the known boundaries, splice each piece back."""
@@ -242,7 +250,7 @@ def run_track(filename, track, brand_name, chain=False, duration=None, windows=N
     prompt = build_prompt(track, brand_name) + (
         " The video contains several cuts of the same location; apply the SAME"
         " replacement consistently in every shot." if len(pieces) > 1 else "")
-    edited = edit_segment(combined, prompt)
+    edited = edit_segment(combined, prompt, model=model)
 
     # split the edited video back at the window boundaries and splice each in
     src = video_path
@@ -265,7 +273,7 @@ def run_track(filename, track, brand_name, chain=False, duration=None, windows=N
         "surface": track.get("surface"),
         "windows": [[round(s, 2), round(e, 2)] for s, e in windows],
         "prompt": prompt,
-        "engine": "runway-aleph2",
+        "engine": f"runway-{model or V2V_MODEL}",
         "output": out_path,
     }
 
