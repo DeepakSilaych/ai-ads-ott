@@ -184,6 +184,21 @@ def splice_video(video_path, out_path, segment_path, seg_start, seg_end):
         capture_output=True, check=True)
 
 
+def _count_shots(path, threshold=0.3):
+    """Count camera shots via ffmpeg scene detection (Aleph caps input at 10)."""
+    out = subprocess.run(
+        ["ffmpeg", "-i", path, "-vf", f"select='gt(scene,{threshold})',metadata=print",
+         "-an", "-f", "null", "-"],
+        capture_output=True, text=True)
+    return out.stderr.count("scene_score") + 1
+
+
+def _extract_frame(video_path, ts, out_png):
+    subprocess.run(["ffmpeg", "-y", "-ss", f"{ts:.3f}", "-i", video_path,
+                    "-frames:v", "1", out_png], capture_output=True, check=True)
+    return out_png
+
+
 def track_windows(track, duration=None, pad_s=1.0, sample_s=2.0, merge_gap_s=3.0):
     """A track's keyframes -> merged contiguous [start, end] edit windows."""
     windows = []
