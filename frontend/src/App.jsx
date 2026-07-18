@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   AppShell, Badge, Box, Button, Card, Group, HoverCard, Image, Loader,
-  Paper, ScrollArea, SegmentedControl, Select, Stack, Text, Textarea, Title, Tooltip, rem,
+  Paper, ScrollArea, SegmentedControl, Select, Stack, Text, Textarea, Title, Tooltip, rem, Modal, FileInput,
 } from '@mantine/core'
 import {
-  IconMaximize, IconMessage, IconMovie, IconPhoto, IconRefresh, IconScan, IconSparkles, IconVolume, IconWaveSine,
+  IconMaximize, IconMessage, IconMovie, IconPhoto, IconRefresh, IconScan, IconSparkles, IconVolume, IconWaveSine, IconUpload,
 } from '@tabler/icons-react'
 import { api, useAdDetection, useVideos } from './hooks/useAdDetection.js'
 
@@ -13,6 +13,29 @@ export default function App() {
   const [selected, setSelected] = useState(null)
   const [view, setView] = useState('videos')
   const [resume, setResume] = useState(null)
+  const [uploadModal, setUploadModal] = useState(false)
+  const [uploadFile, setUploadFile] = useState(null)
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState(null)
+
+  const handleUpload = async () => {
+    if (!uploadFile) return
+    setUploading(true)
+    setUploadError(null)
+    try {
+      const body = new FormData()
+      body.append('video', uploadFile)
+      const res = await fetch('/api/upload', { method: 'POST', body }).then((r) => r.json())
+      if (res.error) { setUploadError(res.error); return }
+      setUploadFile(null)
+      setUploadModal(false)
+      await load()
+    } catch (err) {
+      setUploadError(err.message)
+    } finally {
+      setUploading(false)
+    }
+  }
 
   return (
     <AppShell navbar={{ width: 240, breakpoint: 0 }} padding="md">
@@ -22,9 +45,14 @@ export default function App() {
             <IconMovie size={20} />
             <Title order={5}>Ad Insertion</Title>
           </Group>
-          <Button variant="subtle" size="compact-xs" onClick={load}>
-            <IconRefresh size={14} />
-          </Button>
+          <Group gap={4}>
+            <Button variant="subtle" size="compact-xs" onClick={() => setUploadModal(true)} title="Upload video">
+              <IconUpload size={14} />
+            </Button>
+            <Button variant="subtle" size="compact-xs" onClick={load}>
+              <IconRefresh size={14} />
+            </Button>
+          </Group>
         </Group>
         <SegmentedControl
           fullWidth size="xs" mb="sm" value={view} onChange={setView}
@@ -65,6 +93,20 @@ export default function App() {
             ? <VideoDetail video={selected} resume={resume} key={selected.video_id + (resume?.id || '')} />
             : <Text c="dimmed" ta="center" mt="30vh">Select a video</Text>}
       </AppShell.Main>
+
+      <Modal opened={uploadModal} onClose={() => setUploadModal(false)} title="Upload video" size="md">
+        <Stack gap="md">
+          <FileInput
+            label="Video file" placeholder="Choose a video" accept="video/*"
+            value={uploadFile} onChange={setUploadFile}
+          />
+          {uploadError && <Text size="xs" c="red">{uploadError}</Text>}
+          <Group justify="flex-end" gap="sm">
+            <Button variant="default" size="xs" onClick={() => setUploadModal(false)}>Cancel</Button>
+            <Button size="xs" onClick={handleUpload} loading={uploading} disabled={!uploadFile}>Upload</Button>
+          </Group>
+        </Stack>
+      </Modal>
     </AppShell>
   )
 }
