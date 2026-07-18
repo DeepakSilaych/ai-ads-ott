@@ -470,7 +470,9 @@ function AudioBranding({ video, analysis, resume }) {
                       <Badge size="xs" variant="light" mb={4}>{r.brand || r.engine}</Badge>
                     )}
                     <video
-                      src={`${r.output || (resume && resume.video)}?v=${r.key}`}
+                      src={`${players.length > 1 && r.session_id
+                        ? `/static/uploads/sessions/${r.session_id}.mp4`
+                        : r.output || (resume && resume.video)}?v=${r.key}`}
                       controls preload="metadata"
                       style={{ width: '100%', borderRadius: 8, background: '#000' }}
                     />
