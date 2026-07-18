@@ -4,7 +4,7 @@ import {
   Paper, ScrollArea, SegmentedControl, Select, Stack, Text, Textarea, Title, Tooltip, rem,
 } from '@mantine/core'
 import {
-  IconMessage, IconMovie, IconPhoto, IconRefresh, IconScan, IconSparkles, IconVolume, IconWaveSine,
+  IconMaximize, IconMessage, IconMovie, IconPhoto, IconRefresh, IconScan, IconSparkles, IconVolume, IconWaveSine,
 } from '@tabler/icons-react'
 import { api, useAdDetection, useVideos } from './hooks/useAdDetection.js'
 
@@ -84,12 +84,7 @@ function VideoDetail({ video }) {
       </Group>
 
       <Group align="flex-start" gap="md" wrap="nowrap">
-        <video
-          ref={videoRef}
-          src={video.original}
-          controls
-          style={{ width: '60%', borderRadius: 8, background: '#000' }}
-        />
+        <Player src={video.original} videoRef={videoRef} />
         {analysis && (
           <Paper p="sm" radius="md" withBorder style={{ flex: 1 }}>
             <Text size="xs" c="dimmed" tt="uppercase" fw={700} mb={6}>Summary</Text>
@@ -244,12 +239,7 @@ function AudioBranding({ video, analysis }) {
                 : `"${latest.line_after}" (inserted "${latest.spoken}" at ${latest.at_ts}s, ${latest.engine})`}
             </Text>
           </Group>
-          <video
-            key={latest.key}
-            src={`${latest.output}?v=${latest.key}`}
-            controls
-            style={{ width: '60%', borderRadius: 8, background: '#000' }}
-          />
+          <Player key={latest.key} src={`${latest.output}?v=${latest.key}`} />
         </Box>
       )}
     </Paper>
@@ -448,6 +438,57 @@ function FramePreview({ slots, ts }) {
         {slots.reduce((a, b) => (b.score > a.score ? b : a)).reason}
       </Text>
     </Stack>
+  )
+}
+
+function Player({ src, videoRef, width = '60%', mt }) {
+  const localRef = useRef(null)
+  const ref = videoRef || localRef
+  const [theater, setTheater] = useState(false)
+
+  const expand = () => {
+    const el = ref.current
+    if (!el) return
+    const fs = el.requestFullscreen || el.webkitRequestFullscreen || el.webkitEnterFullscreen
+    if (fs) {
+      try {
+        const p = fs.call(el)
+        if (p && p.then) {
+          p.catch(() => setTheater(true))
+          return
+        }
+        return
+      } catch { /* blocked -> theater */ }
+    }
+    setTheater(true)
+  }
+
+  return (
+    <>
+      <Box pos="relative" w={width} mt={mt}>
+        <video ref={ref} src={src} controls style={{ width: '100%', borderRadius: 8, background: '#000', display: 'block' }} />
+        <Button
+          size="compact-xs" variant="default"
+          pos="absolute" top={8} right={8}
+          onClick={expand}
+          title="Expand"
+        >
+          <IconMaximize size={13} />
+        </Button>
+      </Box>
+      {theater && (
+        <Box
+          pos="fixed" inset={0}
+          style={{ zIndex: 1000, background: 'rgba(0,0,0,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={() => setTheater(false)}
+        >
+          <video src={src} controls autoPlay style={{ maxWidth: '96vw', maxHeight: '92vh', borderRadius: 8 }} onClick={(e) => e.stopPropagation()} />
+          <Button pos="absolute" top={16} right={16} variant="default" size="compact-sm" onClick={() => setTheater(false)}>
+            ✕ Close
+          </Button>
+        </Box>
+      )}
+    </>
   )
 }
 

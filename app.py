@@ -122,12 +122,22 @@ def place_dialogue():
         with open(_result_path(video_id)) as f:
             analysis = json.load(f)
         swap = analysis['dialogue_swaps'][int(data['swap_index'])]
-        result = dialogue_placer.run(
-            filename=data['filename'],
-            swap=swap,
-            transcript=analysis['transcript'],
-            chain=bool(data.get('chain')),
-        )
+        engine = data.get('engine', 'auto')
+        if engine in ('auto', 'voicecraft'):
+            try:
+                result = dialogue_placer.run_voicecraft(
+                    filename=data['filename'], swap=swap,
+                    transcript=analysis['transcript'], chain=bool(data.get('chain')))
+            except Exception:
+                if engine == 'voicecraft':
+                    raise
+                result = dialogue_placer.run(
+                    filename=data['filename'], swap=swap,
+                    transcript=analysis['transcript'], chain=bool(data.get('chain')))
+        else:
+            result = dialogue_placer.run(
+                filename=data['filename'], swap=swap,
+                transcript=analysis['transcript'], chain=bool(data.get('chain')))
         result['output'] = '/' + os.path.relpath(result['output'], os.path.dirname(__file__))
         return jsonify(result)
     except Exception as e:

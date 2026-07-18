@@ -6,3 +6,4 @@ static/uploads/
 frontend/node_modules/
 frontend/dist/
 *.prev.mp4
+vendor/
